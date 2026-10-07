@@ -16,6 +16,7 @@
 
 #include "qgsexpressionfunction.h"
 
+#include <nlohmann/json.hpp>
 #include <random>
 #include <sqlite3.h>
 
@@ -4858,8 +4859,19 @@ static QVariant fcnGeomFromWKT( const QVariantList &values, const QgsExpressionC
 
 static QVariant fcnGeomFromGeoJSON( const QVariantList &values, const QgsExpressionContext *, QgsExpression *parent, const QgsExpressionNodeFunction * )
 {
-  QString geojson = QgsExpressionUtils::getStringValue( values.at( 0 ), parent );
-  QgsGeometry geom = QgsJsonUtils::geometryFromGeoJson( geojson );
+  QVariant value0 = values.at( 0 );
+  QgsGeometry geom;
+
+  if ( value0.userType() == QMetaType::Type::QVariantMap )
+  {
+    json geojson = QgsJsonUtils::jsonFromVariant( value0 );
+    geom = QgsJsonUtils::geometryFromGeoJson( geojson );
+  }
+  else
+  {
+    QString geojsonStr = QgsExpressionUtils::getStringValue( value0, parent );
+    geom = QgsJsonUtils::geometryFromGeoJson( geojsonStr );
+  }
 
   if ( geom.isNull() )
   {

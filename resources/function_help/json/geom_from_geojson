@@ -2,13 +2,17 @@
   "name": "geom_from_geojson",
   "type": "function",
   "groups": ["GeometryGroup"],
-  "description": "Returns a geometry from a GeoJSON Geometry fragment. An error will be thrown if this function is used on a whole JSON document (Feature or FeatureCollection).",
+  "description": "Returns a geometry from a GeoJSON Geometry fragment (string or map). An error will be thrown if this function is used on a whole JSON document (Feature or FeatureCollection).",
   "arguments": [{
     "arg": "geojson",
     "description": "GeoJSON representation of a geometry as a string"
   }],
   "examples": [{
     "expression": "geom_from_geojson('{\"type\":\"Point\",\"coordinates\":[4,5]}')",
+    "returns": "a point geometry object"
+  },
+  {
+    "expression": "geom_from_geojson(map('type','Point','coordinates',array(4,5)))",
     "returns": "a point geometry object"
   },
   {
