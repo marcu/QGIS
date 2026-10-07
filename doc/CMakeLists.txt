@@ -2,7 +2,7 @@
 set (WITH_APIDOC FALSE CACHE BOOL "Determines whether the QGIS API doxygen documentation should be built")
 
 # include Qt documentation
-set (QT_DOC_URL "https://doc.qt.io/qt-5/" CACHE STRING "URL for Qt docs")
+set (QT_DOC_URL "https://doc.qt.io/qt-6/" CACHE STRING "URL for Qt docs")
 
 set(QGIS_DOC_FILES
   ../INSTALL.md
@@ -96,15 +96,18 @@ if(WITH_APIDOC)
       ${CMAKE_SOURCE_DIR}/src/core/scalebar
       ${CMAKE_SOURCE_DIR}/src/core/sensor
       ${CMAKE_SOURCE_DIR}/src/core/settings
+      ${CMAKE_SOURCE_DIR}/src/core/stac
       ${CMAKE_SOURCE_DIR}/src/core/symbology
       ${CMAKE_SOURCE_DIR}/src/core/symbology/converters
       ${CMAKE_SOURCE_DIR}/src/core/textrenderer
       ${CMAKE_SOURCE_DIR}/src/core/tiledscene
       ${CMAKE_SOURCE_DIR}/src/core/validity
       ${CMAKE_SOURCE_DIR}/src/core/vector
+      ${CMAKE_SOURCE_DIR}/src/core/vectorfield
       ${CMAKE_SOURCE_DIR}/src/core/vectortile
       ${CMAKE_SOURCE_DIR}/src/core/web
       ${CMAKE_SOURCE_DIR}/src/gui
+      ${CMAKE_SOURCE_DIR}/src/gui/3d
       ${CMAKE_SOURCE_DIR}/src/gui/actions
       ${CMAKE_SOURCE_DIR}/src/gui/annotations
       ${CMAKE_SOURCE_DIR}/src/gui/attributetable
@@ -138,6 +141,7 @@ if(WITH_APIDOC)
       ${CMAKE_SOURCE_DIR}/src/gui/tableeditor
       ${CMAKE_SOURCE_DIR}/src/gui/tiledscene
       ${CMAKE_SOURCE_DIR}/src/gui/vector
+      ${CMAKE_SOURCE_DIR}/src/gui/vectorfield
       ${CMAKE_SOURCE_DIR}/src/gui/vectortile
       ${CMAKE_SOURCE_DIR}/src/analysis
       ${CMAKE_SOURCE_DIR}/src/analysis/georeferencing

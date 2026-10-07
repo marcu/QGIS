@@ -12,7 +12,7 @@
 class QgsStacAsset
 {
 %Docstring(signature="appended")
-Class for storing a STAC asset's data.
+Stores data associated with a STAC asset.
 
 .. versionadded:: 3.44
 %End
@@ -77,7 +77,7 @@ COPC.
 :param authcfg: Optional authentication configuration ID (since QGIS
                 4.0).
 
-If the optional @authcfg parameter is set the authentication
+If the optional ``authcfg`` parameter is set the authentication
 configuration ID will be encoded in the returned URI.
 
 .. versionadded:: 3.42

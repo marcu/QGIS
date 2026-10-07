@@ -430,7 +430,7 @@ void TestQgsLayoutScaleBar::doubleBoxLabelCenteredSegment()
 
   scalebar->setLabelVerticalPlacement( Qgis::ScaleBarDistanceLabelVerticalPlacement::BelowSegment );
   scalebar->setLabelHorizontalPlacement( Qgis::ScaleBarDistanceLabelHorizontalPlacement::CenteredSegment );
-  scalebar->setUnitLabel( u"units"_s );
+  scalebar->setUnitLabel( u" units"_s );
   qgis::down_cast<QgsBasicNumericFormat *>( const_cast<QgsNumericFormat *>( scalebar->numericFormat() ) )->setShowThousandsSeparator( false );
 
   QGSVERIFYLAYOUTCHECK( u"layoutscalebar_doublebox_labelcenteredsegment"_s, &l );
@@ -444,7 +444,14 @@ void TestQgsLayoutScaleBar::numeric()
   map->attemptSetSceneRect( QRectF( 20, 20, 150, 150 ) );
   map->setFrameEnabled( true );
   l.addLayoutItem( map );
-  map->setExtent( QgsRectangle( 17.923, 30.160, 18.023, 30.260 ) );
+  // base extent that sets scale to roughly 49097
+  const QgsRectangle extent( 17.923, 30.160, 18.023, 30.260 );
+  map->setExtent( extent );
+  // adjust to the desired scale
+  map->setScale( 49100 );
+  // the extent was modified slightly to fit the scale, so we check that it was actually modified
+  QVERIFY( extent != map->extent() );
+
 
   QgsLayoutItemScaleBar *scalebar = new QgsLayoutItemScaleBar( &l );
   scalebar->attemptSetSceneRect( QRectF( 20, 180, 50, 20 ) );

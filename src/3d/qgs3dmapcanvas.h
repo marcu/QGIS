@@ -209,7 +209,7 @@ class _3D_EXPORT Qgs3DMapCanvas : public QWindow
     //! Emitted when the 3D map canvas was successfully saved as image
     void savedAsImage( const QString &fileName );
 
-    //! Emitted when the the map setting is changed
+    //! Emitted when the map setting is changed
     void mapSettingsChanged();
 
     //! Emitted when the FPS count changes (at most every frame)
@@ -268,7 +268,7 @@ class _3D_EXPORT Qgs3DMapCanvas : public QWindow
     bool eventFilter( QObject *watched, QEvent *event ) override;
 
   private:
-    Qt3DCore::QAspectEngine *m_aspectEngine;
+    std::unique_ptr<Qt3DCore::QAspectEngine> m_aspectEngine;
 
     // Aspects
     Qt3DRender::QRenderAspect *m_renderAspect;

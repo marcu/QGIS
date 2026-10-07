@@ -18,7 +18,7 @@
 
 #include "qgis.h"
 #include "qgis_gui.h"
-#include "qgsprocessingalgorithmdialogbase.h"
+#include "qgsprocessingalgorithmwidgetbase.h"
 
 #include <QElapsedTimer>
 
@@ -34,7 +34,7 @@ class QgsProxyProgressTask;
  * \note This is not considered stable API and may change in future QGIS versions.
  * \since QGIS 3.26
  */
-class GUI_EXPORT QgsProcessingBatchAlgorithmDialogBase : public QgsProcessingAlgorithmDialogBase
+class GUI_EXPORT QgsProcessingBatchAlgorithmDialogBase : public QgsProcessingAlgorithmWidgetBase
 {
     Q_OBJECT
 
@@ -42,7 +42,7 @@ class GUI_EXPORT QgsProcessingBatchAlgorithmDialogBase : public QgsProcessingAlg
     /**
      * Constructor for QgsProcessingBatchAlgorithmDialogBase.
      */
-    QgsProcessingBatchAlgorithmDialogBase( QWidget *parent SIP_TRANSFERTHIS = nullptr, Qt::WindowFlags flags = Qt::WindowFlags() );
+    QgsProcessingBatchAlgorithmDialogBase( QMainWindow *parentWindow SIP_TRANSFERTHIS );
     ~QgsProcessingBatchAlgorithmDialogBase() override;
 
     void resetAdditionalGui() override;
@@ -74,11 +74,6 @@ class GUI_EXPORT QgsProcessingBatchAlgorithmDialogBase : public QgsProcessingAlg
      * (Each step in the batch processing will use a new Processing context)
      */
     virtual QgsProcessingContext *createContext( QgsProcessingFeedback *feedback ) = 0 SIP_FACTORY;
-
-    /**
-     * Called when the dialog should handle the results of an algorithm, e.g. by loading layers into the current project.
-     */
-    virtual void handleAlgorithmResults( QgsProcessingAlgorithm *algorithm, QgsProcessingContext &context, QgsProcessingFeedback *feedback, const QVariantMap &parameters ) = 0;
 
     /**
      * Populates the HTML results dialog as a result of a successful algorithm execution.

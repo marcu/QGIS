@@ -226,7 +226,7 @@ class ExtractLabelSink : public QgsLabelSink
           break;
       }
 
-      const double labelRotation = !qgsDoubleNear( label->getAlpha(), 0.0 ) ? -( label->getAlpha() * 180 / M_PI ) + 360 : 0.0;
+      const double labelRotation = !qgsDoubleNear( label->angleRadians(), 0.0 ) ? -( label->angleRadians() * 180 / M_PI ) + 360 : 0.0;
 
       const QFont font = labelFeature->definedFont();
       const QString fontFamily = font.family();
@@ -338,6 +338,8 @@ class ExtractLabelSink : public QgsLabelSink
 
 QVariantMap QgsExtractLabelsAlgorithm::processAlgorithm( const QVariantMap &parameters, QgsProcessingContext &context, QgsProcessingFeedback *feedback )
 {
+  QGS_MARK_ALGORITHM_SOURCE
+
   const QgsRectangle extent = parameterAsExtent( parameters, u"EXTENT"_s, context );
   const double scale = parameterAsDouble( parameters, u"SCALE"_s, context );
   if ( qgsDoubleNear( scale, 0.0 ) )
@@ -397,6 +399,7 @@ QVariantMap QgsExtractLabelsAlgorithm::processAlgorithm( const QVariantMap &para
   mapSettings.setLayerStyleOverrides( mMapThemeStyleOverrides );
   mapSettings.setLabelingEngineSettings( mLabelSettings );
   mapSettings.setScaleMethod( mScaleMethod );
+  mapSettings.setEllipsoid( context.ellipsoid() );
 
   //build the expression context
   QgsExpressionContext expressionContext;
@@ -494,8 +497,11 @@ QVariantMap QgsExtractLabelsAlgorithm::processAlgorithm( const QVariantMap &para
 
     if ( !sink->addFeature( feature, QgsFeatureSink::FastInsert ) )
       throw QgsProcessingException( writeFeatureError( sink.get(), parameters, u"OUTPUT"_s ) );
+    else
+      feedback->featureAddedToSink( u"OUTPUT"_s );
   }
   sink->finalize();
+  feedback->featureSinkFinalized( u"OUTPUT"_s );
   sink.reset();
 
   if ( QgsVectorLayer *vl = qobject_cast<QgsVectorLayer *>( QgsProcessingUtils::mapLayerFromString( dest, context ) ) )
@@ -564,22 +570,27 @@ bool QgsExtractLabelsAlgorithm::prepareAlgorithm( const QVariantMap &parameters,
 {
   // Retrieve and clone layers
   const QString mapTheme = parameterAsString( parameters, u"MAP_THEME"_s, context );
-  if ( !mapTheme.isEmpty() && context.project()->mapThemeCollection()->hasMapTheme( mapTheme ) )
+
+  QgsProject *project = context.project();
+  if ( project )
   {
-    const QList<QgsMapLayer *> constLayers = context.project()->mapThemeCollection()->mapThemeVisibleLayers( mapTheme );
-    for ( const QgsMapLayer *l : constLayers )
+    if ( !mapTheme.isEmpty() && project->mapThemeCollection()->hasMapTheme( mapTheme ) )
     {
-      // only copy vector layers as other layer types aren't actors in the labeling process
-      if ( l->type() == Qgis::LayerType::Vector )
-        mMapLayers.push_back( l->clone() );
+      const QList<QgsMapLayer *> constLayers = project->mapThemeCollection()->mapThemeVisibleLayers( mapTheme );
+      for ( const QgsMapLayer *l : constLayers )
+      {
+        // only copy vector layers as other layer types aren't actors in the labeling process
+        if ( l->type() == Qgis::LayerType::Vector )
+          mMapLayers.push_back( l->clone() );
+      }
+      mMapThemeStyleOverrides = project->mapThemeCollection()->mapThemeStyleOverrides( mapTheme );
     }
-    mMapThemeStyleOverrides = context.project()->mapThemeCollection()->mapThemeStyleOverrides( mapTheme );
   }
 
-  if ( mMapLayers.isEmpty() )
+  if ( project && mMapLayers.isEmpty() )
   {
     QList<QgsMapLayer *> layers;
-    QgsLayerTree *root = context.project()->layerTreeRoot();
+    QgsLayerTree *root = project->layerTreeRoot();
     const QList<QgsLayerTreeLayer *> layerTreeLayers = root->findLayers();
     layers.reserve( layerTreeLayers.size() );
     for ( QgsLayerTreeLayer *nodeLayer : layerTreeLayers )
@@ -602,15 +613,18 @@ bool QgsExtractLabelsAlgorithm::prepareAlgorithm( const QVariantMap &parameters,
   }
 
   mCrs = parameterAsExtentCrs( parameters, u"EXTENT"_s, context );
-  if ( !mCrs.isValid() )
-    mCrs = context.project()->crs();
+  if ( project && !mCrs.isValid() )
+    mCrs = project->crs();
 
   bool includeUnplaced = parameterAsBoolean( parameters, u"INCLUDE_UNPLACED"_s, context );
-  mLabelSettings = context.project()->labelingEngineSettings();
+  mLabelSettings = project ? project->labelingEngineSettings() : QgsLabelingEngineSettings();
   mLabelSettings.setFlag( Qgis::LabelingFlag::DrawUnplacedLabels, includeUnplaced );
   mLabelSettings.setFlag( Qgis::LabelingFlag::CollectUnplacedLabels, includeUnplaced );
 
-  mScaleMethod = context.project()->scaleMethod();
+  if ( project )
+  {
+    mScaleMethod = project->scaleMethod();
+  }
 
   return true;
 }

@@ -48,7 +48,7 @@ using namespace Qt::StringLiterals;
 
 QgsStacSourceSelect::QgsStacSourceSelect( QWidget *parent, Qt::WindowFlags fl, QgsProviderRegistry::WidgetMode theWidgetMode )
   : QgsAbstractDataSourceWidget( parent, fl, theWidgetMode )
-  , mStac( new QgsStacController )
+  , mStac( std::make_unique<QgsStacController>() )
   , mItemsModel( new QgsStacItemListModel( this ) )
 {
   setupUi( this );
@@ -68,9 +68,9 @@ QgsStacSourceSelect::QgsStacSourceSelect( QWidget *parent, Qt::WindowFlags fl, Q
 
   populateConnectionList();
 
-  connect( mStac, &QgsStacController::finishedStacObjectRequest, this, &QgsStacSourceSelect::onStacObjectRequestFinished );
-  connect( mStac, &QgsStacController::finishedItemCollectionRequest, this, &QgsStacSourceSelect::onItemCollectionRequestFinished );
-  connect( mStac, &QgsStacController::finishedCollectionsRequest, this, &QgsStacSourceSelect::onCollectionsRequestFinished );
+  connect( mStac.get(), &QgsStacController::finishedStacObjectRequest, this, &QgsStacSourceSelect::onStacObjectRequestFinished );
+  connect( mStac.get(), &QgsStacController::finishedItemCollectionRequest, this, &QgsStacSourceSelect::onItemCollectionRequestFinished );
+  connect( mStac.get(), &QgsStacController::finishedCollectionsRequest, this, &QgsStacSourceSelect::onCollectionsRequestFinished );
 
   mItemsView->setModel( mItemsModel );
   mItemsView->setItemDelegate( new QgsStacItemDelegate( this ) );
@@ -84,7 +84,7 @@ QgsStacSourceSelect::QgsStacSourceSelect( QWidget *parent, Qt::WindowFlags fl, Q
 
   connect( mFootprintsCheckBox, &QCheckBox::clicked, this, &QgsStacSourceSelect::showFootprints );
 
-  mParametersDialog = new QgsStacSearchParametersDialog( mStac, mapCanvas(), this );
+  mParametersDialog = new QgsStacSearchParametersDialog( mStac.get(), mapCanvas(), this );
 
   connect( mFiltersButton, &QToolButton::clicked, mParametersDialog, &QgsStacSearchParametersDialog::open );
   connect( mParametersDialog, &QgsStacSearchParametersDialog::finished, this, &QgsStacSourceSelect::onSearchParametersDialogClosed );
@@ -93,9 +93,7 @@ QgsStacSourceSelect::QgsStacSourceSelect( QWidget *parent, Qt::WindowFlags fl, Q
 }
 
 QgsStacSourceSelect::~QgsStacSourceSelect()
-{
-  delete mStac;
-}
+{}
 
 void QgsStacSourceSelect::hideEvent( QHideEvent *e )
 {
@@ -526,7 +524,7 @@ void QgsStacSourceSelect::showItemsContextMenu( QPoint point )
     {
       if ( asset.isCloudOptimized() )
       {
-        QAction *loadAssetAction = new QAction( asset.title(), assetsMenu );
+        QAction *loadAssetAction = new QAction( asset.title().isEmpty() ? QUrl( asset.href() ).fileName() : asset.title(), assetsMenu );
         connect( loadAssetAction, &QAction::triggered, this, [this, uri = asset.uri()] {
           QgsTemporaryCursorOverride cursorOverride( Qt::WaitCursor );
           loadUri( uri );
@@ -592,7 +590,7 @@ void QgsStacSourceSelect::highlightFootprint( const QModelIndex &index )
   QgsGeometry geom = index.data( QgsStacItemListModel::Role::Geometry ).value<QgsGeometry>();
   if ( QgsMapCanvas *map = mapCanvas() )
   {
-    mCurrentItemBand.reset( new QgsRubberBand( map, Qgis::GeometryType::Polygon ) );
+    mCurrentItemBand = make_qobject_unique<QgsRubberBand>( map, Qgis::GeometryType::Polygon );
     mCurrentItemBand->setFillColor( QColor::fromRgb( 255, 0, 0, 128 ) );
     mCurrentItemBand->setToGeometry( geom, QgsCoordinateReferenceSystem::fromEpsgId( 4326 ) );
   }

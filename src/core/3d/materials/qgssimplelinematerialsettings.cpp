@@ -40,14 +40,15 @@ bool QgsSimpleLineMaterialSettings::supportsTechnique( Qgis::MaterialRenderingTe
     case Qgis::MaterialRenderingTechnique::TrianglesWithFixedTexture:
     case Qgis::MaterialRenderingTechnique::TrianglesFromModel:
     case Qgis::MaterialRenderingTechnique::TrianglesDataDefined:
+    case Qgis::MaterialRenderingTechnique::Billboards:
       return false;
   }
   return false;
 }
 
-QgsAbstractMaterialSettings *QgsSimpleLineMaterialSettings::create()
+std::unique_ptr<QgsAbstractMaterialSettings> QgsSimpleLineMaterialSettings::create()
 {
-  return new QgsSimpleLineMaterialSettings();
+  return std::make_unique<QgsSimpleLineMaterialSettings>();
 }
 
 QgsSimpleLineMaterialSettings *QgsSimpleLineMaterialSettings::clone() const
@@ -64,6 +65,11 @@ bool QgsSimpleLineMaterialSettings::equals( const QgsAbstractMaterialSettings *o
   return *this == *otherLine;
 }
 
+QSet<QgsAbstractMaterialSettings::Property> QgsSimpleLineMaterialSettings::supportedProperties() const
+{
+  return { QgsAbstractMaterialSettings::Property::Ambient };
+}
+
 void QgsSimpleLineMaterialSettings::readXml( const QDomElement &elem, const QgsReadWriteContext &context )
 {
   mAmbient = QgsColorUtils::colorFromString( elem.attribute( u"ambient"_s, u"25,25,25"_s ) );
@@ -76,4 +82,14 @@ void QgsSimpleLineMaterialSettings::writeXml( QDomElement &elem, const QgsReadWr
   elem.setAttribute( u"ambient"_s, QgsColorUtils::colorToString( mAmbient ) );
 
   QgsAbstractMaterialSettings::writeXml( elem, context );
+}
+
+QColor QgsSimpleLineMaterialSettings::averageColor() const
+{
+  return ambient();
+}
+
+void QgsSimpleLineMaterialSettings::setColorsFromBase( const QColor &baseColor )
+{
+  setAmbient( baseColor );
 }

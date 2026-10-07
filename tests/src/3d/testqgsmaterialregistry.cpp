@@ -32,12 +32,14 @@ class DummyMaterialSettings : public QgsAbstractMaterialSettings
   public:
     DummyMaterialSettings() = default;
     QString type() const override { return u"Dummy"_s; }
-    static QgsAbstractMaterialSettings *create() { return new DummyMaterialSettings(); }
+    static std::unique_ptr<QgsAbstractMaterialSettings> create() { return std::make_unique<DummyMaterialSettings>(); }
     DummyMaterialSettings *clone() const override { return new DummyMaterialSettings(); }
     static bool supportsTechnique( Qgis::MaterialRenderingTechnique ) { return true; }
     void readXml( const QDomElement &, const QgsReadWriteContext & ) override {}
     void writeXml( QDomElement &, const QgsReadWriteContext & ) const override {}
     bool equals( const QgsAbstractMaterialSettings * ) const override { return true; }
+    QColor averageColor() const override { return QColor(); }
+    void setColorsFromBase( const QColor &baseColor ) override { Q_UNUSED( baseColor ) }
 };
 
 class TestQgsMaterialRegistry : public QgsTest
@@ -153,7 +155,7 @@ void TestQgsMaterialRegistry::createMaterial()
   QVERIFY( dummySymbol );
 
   //try creating a bad material
-  material.reset( registry->createMaterialSettings( u"bad material"_s ) );
+  material = registry->createMaterialSettings( u"bad material"_s );
   QVERIFY( !material.get() );
 }
 

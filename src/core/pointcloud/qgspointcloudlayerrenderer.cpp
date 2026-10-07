@@ -22,11 +22,13 @@
 #include "delaunator.hpp"
 #include "qgsapplication.h"
 #include "qgselevationmap.h"
+#include "qgsellipsoidutils.h"
 #include "qgslogger.h"
 #include "qgsmapclippingutils.h"
 #include "qgsmeshlayerutils.h"
 #include "qgsmessagelog.h"
 #include "qgspointcloudattribute.h"
+#include "qgspointcloudblock.h"
 #include "qgspointcloudblockrequest.h"
 #include "qgspointcloudextentrenderer.h"
 #include "qgspointcloudindex.h"
@@ -86,7 +88,7 @@ QgsPointCloudLayerRenderer::QgsPointCloudLayerRenderer( QgsPointCloudLayer *laye
     mIsVpc = true;
     mAverageSubIndexWidth = vpcProvider->averageSubIndexWidth();
     mAverageSubIndexHeight = vpcProvider->averageSubIndexHeight();
-    mOverviewIndex = vpcProvider->overview();
+    mOverviewIndexes = vpcProvider->overviews();
   }
 
   mCloudExtent = layer->dataProvider()->polygonBounds();
@@ -132,6 +134,25 @@ bool QgsPointCloudLayerRenderer::render()
       renderContext()->painter()->setClipPath( path, Qt::IntersectClip );
   }
 
+  double topoLat = 0.0, topoLon = 0.0;
+  if ( renderContext()->coordinateTransform().destinationCrs().topocentricOrigin( topoLat, topoLon ) )
+  {
+    const QgsEllipsoidUtils::EllipsoidParameters ellipsoidParams = QgsEllipsoidUtils::ellipsoidParameters( renderContext()->coordinateTransform().destinationCrs().ellipsoidAcronym() );
+    if ( ellipsoidParams.valid && ellipsoidParams.semiMajor > 0 && ellipsoidParams.semiMinor > 0 )
+    {
+      const double a = ellipsoidParams.semiMajor;
+      const double b = ellipsoidParams.semiMinor;
+      const double latRad = topoLat * M_PI / 180.0;
+
+      const double beta = std::atan2( b * std::sin( latRad ), a * std::cos( latRad ) );
+      const double xa = a * std::cos( beta );
+      const double zb = b * std::sin( beta );
+      const double originRadius = std::sqrt( xa * xa + zb * zb );
+
+      mMapCrsZFilter = QgsDoubleRange( -originRadius, std::numeric_limits< double >::max() );
+    }
+  }
+
   if ( mRenderer->type() == "extent"_L1 )
   {
     // special case for extent only renderer!
@@ -171,7 +192,8 @@ bool QgsPointCloudLayerRenderer::render()
   if ( !context.renderContext().zRange().isInfinite()
        || mRenderer->drawOrder2d() == Qgis::PointCloudDrawOrder::BottomToTop
        || mRenderer->drawOrder2d() == Qgis::PointCloudDrawOrder::TopToBottom
-       || renderContext()->elevationMap() )
+       || renderContext()->elevationMap()
+       || !mMapCrsZFilter.isInfinite() )
     mAttributes.push_back( QgsPointCloudAttribute( u"Z"_s, QgsPointCloudAttribute::Int32 ) );
 
   // collect attributes required by renderer
@@ -225,47 +247,60 @@ bool QgsPointCloudLayerRenderer::render()
         visibleIndexes.append( si );
       }
     }
+
     const double overviewSwitchingScale = mRenderer->overviewSwitchingScale();
     const bool zoomedOut = renderExtent.width() > mAverageSubIndexWidth * overviewSwitchingScale || renderExtent.height() > mAverageSubIndexHeight * overviewSwitchingScale;
-    // if the overview of virtual point cloud exists, and we are zoomed out, we render just overview
-    if ( mOverviewIndex && mOverviewIndex->isValid() && zoomedOut && mRenderer->zoomOutBehavior() == Qgis::PointCloudZoomOutRenderBehavior::RenderOverview )
-    {
-      renderIndex( *mOverviewIndex );
-    }
-    else
-    {
-      // if the overview of virtual point cloud exists, and we are zoomed out, but we want both overview and extents,
-      // we render overview
-      if ( mOverviewIndex && mOverviewIndex->isValid() && zoomedOut && mRenderer->zoomOutBehavior() == Qgis::PointCloudZoomOutRenderBehavior::RenderOverviewAndExtents )
-      {
-        renderIndex( *mOverviewIndex );
-      }
-      mSubIndexExtentRenderer->startRender( context );
-      for ( const QgsPointCloudSubIndex &si : visibleIndexes )
-      {
-        if ( canceled )
-          break;
 
-        QgsPointCloudIndex pc = si.index();
-        // if the index of point cloud is invalid, or we are zoomed out and want extents, we render the point cloud extent
-        if ( !pc
-             || !pc.isValid()
-             || ( ( mRenderer->zoomOutBehavior() == Qgis::PointCloudZoomOutRenderBehavior::RenderExtents || mRenderer->zoomOutBehavior() == Qgis::PointCloudZoomOutRenderBehavior::RenderOverviewAndExtents ) && zoomedOut ) )
+    bool shouldRenderOverviews = false, shouldRenderExtents = false;
+    switch ( mRenderer->zoomOutBehavior() )
+    {
+      case Qgis::PointCloudZoomOutRenderBehavior::RenderOverview:
+        shouldRenderOverviews = true;
+        shouldRenderExtents = false;
+        break;
+      case Qgis::PointCloudZoomOutRenderBehavior::RenderOverviewAndExtents:
+        shouldRenderOverviews = true;
+        shouldRenderExtents = true;
+        break;
+      case Qgis::PointCloudZoomOutRenderBehavior::RenderExtents:
+        shouldRenderOverviews = false;
+        shouldRenderExtents = true;
+        break;
+    }
+
+    if ( zoomedOut && shouldRenderOverviews )
+    {
+      for ( QgsPointCloudIndex &ovIdx : mOverviewIndexes )
+      {
+        if ( ovIdx.isValid() && renderExtent.intersects( ovIdx.extent() ) )
+          renderIndex( ovIdx );
+      }
+    }
+
+    mSubIndexExtentRenderer->startRender( context );
+    for ( const QgsPointCloudSubIndex &si : visibleIndexes )
+    {
+      if ( canceled )
+        break;
+
+      QgsPointCloudIndex pc = si.index();
+      // if the index of point cloud is invalid, or we are zoomed out and want extents, we render the point cloud extent
+      if ( ( zoomedOut && shouldRenderExtents ) || ( !zoomedOut && ( !pc || !pc.isValid() ) ) )
+      {
+        mSubIndexExtentRenderer->renderExtent( si.polygonBounds(), context );
+        if ( mSubIndexExtentRenderer->showLabels() )
         {
-          mSubIndexExtentRenderer->renderExtent( si.polygonBounds(), context );
-          if ( mSubIndexExtentRenderer->showLabels() )
-          {
-            mSubIndexExtentRenderer->renderLabel( context.renderContext().mapToPixel().transformBounds( si.extent().toRectF() ), si.uri().section( "/", -1 ).section( ".", 0, 0 ), context );
-          }
-        }
-        // else we just render the visible point cloud
-        else
-        {
-          canceled = !renderIndex( pc );
+          mSubIndexExtentRenderer->renderLabel( context.renderContext().mapToPixel().transformBounds( si.extent().toRectF() ), si.uri().section( "/", -1 ).section( ".", 0, 0 ), context );
         }
       }
-      mSubIndexExtentRenderer->stopRender( context );
+
+      // When properly zoomed, render the visible point cloud
+      if ( pc && pc.isValid() && !zoomedOut )
+      {
+        canceled = !renderIndex( pc );
+      }
     }
+    mSubIndexExtentRenderer->stopRender( context );
   }
 
   if ( elevationShadingRenderer.isActive() )
@@ -287,7 +322,7 @@ bool QgsPointCloudLayerRenderer::render()
 bool QgsPointCloudLayerRenderer::renderIndex( QgsPointCloudIndex &pc )
 {
   QgsPointCloudRenderContext context( *renderContext(), pc.scale(), pc.offset(), mZScale, mZOffset, mFeedback.get() );
-
+  context.setMapCrsZFilter( mMapCrsZFilter );
 
 #ifdef QGISDEBUG
   QElapsedTimer t;
@@ -392,7 +427,7 @@ int QgsPointCloudLayerRenderer::renderNodesSync( const QVector<QgsPointCloudNode
   }
 
   int nodesDrawn = 0;
-  for ( const QgsPointCloudNodeId &n : nodes )
+  for ( QgsPointCloudNodeId n : nodes )
   {
     if ( context.renderContext().renderingStopped() )
     {
@@ -465,7 +500,7 @@ int QgsPointCloudLayerRenderer::renderNodesAsync( const QVector<QgsPointCloudNod
 
   for ( int i = 0; i < nodes.size(); ++i )
   {
-    const QgsPointCloudNodeId &n = nodes[i];
+    QgsPointCloudNodeId n = nodes[i];
     const QString nStr = n.toString();
     QgsPointCloudBlockRequest *blockRequest = pc.asyncNodeData( n, request );
     blockRequests.append( blockRequest );
@@ -557,7 +592,7 @@ int QgsPointCloudLayerRenderer::renderNodesSorted(
   // And pairs of byte array start positions paired with their Z values for sorting
   QVector<QPair<int, double>> allPairs;
 
-  for ( const QgsPointCloudNodeId &n : nodes )
+  for ( QgsPointCloudNodeId n : nodes )
   {
     if ( context.renderContext().renderingStopped() )
     {
@@ -835,7 +870,7 @@ QVector<QgsPointCloudNodeId> QgsPointCloudLayerRenderer::traverseTree( const Qgs
   if ( childrenErrorPixels < maxErrorPixels )
     return nodes;
 
-  for ( const QgsPointCloudNodeId &nn : node.children() )
+  for ( QgsPointCloudNodeId nn : node.children() )
   {
     nodes += traverseTree( pc, context, nn, maxErrorPixels, childrenErrorPixels );
   }

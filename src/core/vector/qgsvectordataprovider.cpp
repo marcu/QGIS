@@ -290,7 +290,7 @@ void QgsVectorDataProvider::setEncoding( const QString &e )
       // can we use the OGR proxy codec?
       if ( QgsOgrProxyTextCodec::supportedCodecs().contains( e, Qt::CaseInsensitive ) )
       {
-        //from the Qt docs (https://doc.qt.io/qt-5/qtextcodec.html#QTextCodec-1)
+        //from the Qt docs (https://doc.qt.io/qt-6/qtextcodec.html#QTextCodec-1)
         // "The QTextCodec should always be constructed on the heap (i.e. with new).
         // Qt takes ownership and will delete it when the application terminates."
         mEncoding = new QgsOgrProxyTextCodec( e.toLocal8Bit() );
@@ -873,6 +873,13 @@ QgsFeatureRenderer *QgsVectorDataProvider::createRenderer( const QVariantMap & )
 }
 
 QgsAbstractVectorLayerLabeling *QgsVectorDataProvider::createLabeling( const QVariantMap & ) const
+{
+  QGIS_PROTECT_QOBJECT_THREAD_ACCESS
+
+  return nullptr;
+}
+
+const QgsLayerRenderingSettings *QgsVectorDataProvider::renderingSettings( const QVariantMap & ) const
 {
   QGIS_PROTECT_QOBJECT_THREAD_ACCESS
 

@@ -195,6 +195,9 @@ bool Qgs3DSceneExporter::parseVectorLayerEntity( Qt3DCore::QEntity *entity, QgsV
         processEntityMaterial( parentEntity, object );
       mObjects.push_back( object );
     }
+
+    mObjects << processLines( entity, layer->name() + u"_"_s );
+
     return mObjects.size() > prevSize;
   }
 
@@ -624,6 +627,9 @@ Qgs3DExportObject *Qgs3DSceneExporter::processGeometryRenderer( Qt3DRender::QGeo
   if ( !geometry )
     return nullptr;
 
+  if ( findAttribute( geometry, u"pointA"_s, Qt3DCore::QAttribute::VertexAttribute ) )
+    return nullptr;
+
   // === Compute triangleIndexStartingIndiceToKeep according to duplicated features
   //
   // In the case of polygons, we have multiple feature geometries within the same geometry object (QgsTessellatedPolygonGeometry).
@@ -793,25 +799,30 @@ QVector<Qgs3DExportObject *> Qgs3DSceneExporter::processLines( Qt3DCore::QEntity
   const QList<Qt3DRender::QGeometryRenderer *> renderers = entity->findChildren<Qt3DRender::QGeometryRenderer *>();
   for ( Qt3DRender::QGeometryRenderer *renderer : renderers )
   {
-    if ( renderer->primitiveType() != Qt3DRender::QGeometryRenderer::LineStripAdjacency )
-      continue;
     Qt3DCore::QGeometry *geom = renderer->geometry();
-    Qt3DCore::QAttribute *positionAttribute = findAttribute( geom, Qt3DCore::QAttribute::defaultPositionAttributeName(), Qt3DCore::QAttribute::VertexAttribute );
-    Qt3DCore::QAttribute *indexAttribute = findAttribute( geom, QString(), Qt3DCore::QAttribute::IndexAttribute );
-    if ( !positionAttribute || !indexAttribute )
-    {
-      QgsDebugError( QString( "Cannot export '%1' - geometry has no position or index attribute!" ).arg( objectNamePrefix ) );
+    Qt3DCore::QAttribute *pointAAttribute = findAttribute( geom, u"pointA"_s, Qt3DCore::QAttribute::VertexAttribute );
+    Qt3DCore::QAttribute *pointBAttribute = findAttribute( geom, u"pointB"_s, Qt3DCore::QAttribute::VertexAttribute );
+    Qt3DCore::QAttribute *pointCAttribute = findAttribute( geom, u"pointC"_s, Qt3DCore::QAttribute::VertexAttribute );
+    if ( !pointAAttribute || !pointBAttribute || pointCAttribute )
       continue;
-    }
 
-    const QByteArray vertexBytes = getData( positionAttribute->buffer() );
-    const QByteArray indexBytes = getData( indexAttribute->buffer() );
-    if ( vertexBytes.isNull() || indexBytes.isNull() )
+    const QByteArray pointABytes = getData( pointAAttribute->buffer() );
+    const QByteArray pointBBytes = getData( pointBAttribute->buffer() );
+    if ( pointABytes.isNull() || pointBBytes.isNull() )
     {
-      QgsDebugError( QString( "Geometry for '%1' has position or index attribute with empty data!" ).arg( objectNamePrefix ) );
+      QgsDebugError( QString( "Geometry for '%1' has pointA or pointB attribute with empty data!" ).arg( objectNamePrefix ) );
       continue;
     }
-    const QVector<float> positionData = getAttributeData<float>( positionAttribute, vertexBytes );
+    const QVector<float> pointAData = getAttributeData<float>( pointAAttribute, pointABytes );
+    const QVector<float> pointBData = getAttributeData<float>( pointBAttribute, pointBBytes );
+
+    QVector<float> positionData;
+    positionData.reserve( pointAData.size() + pointBData.size() );
+    for ( int i = 0; i + 2 < pointAData.size(); i += 3 )
+    {
+      positionData << pointAData[i] << pointAData[i + 1] << pointAData[i + 2];
+      positionData << pointBData[i] << pointBData[i + 1] << pointBData[i + 2];
+    }
 
     Qgs3DExportObject *exportObject = new Qgs3DExportObject( getObjectName( objectNamePrefix + u"line"_s ) );
     exportObject->setupLine( positionData );
@@ -830,7 +841,7 @@ Qgs3DExportObject *Qgs3DSceneExporter::processPoints( Qt3DCore::QEntity *entity,
     Qt3DCore::QGeometry *geometry = qobject_cast<QgsBillboardGeometry *>( renderer->geometry() );
     if ( !geometry )
       continue;
-    Qt3DCore::QAttribute *positionAttribute = findAttribute( geometry, Qt3DCore::QAttribute::defaultPositionAttributeName(), Qt3DCore::QAttribute::VertexAttribute );
+    Qt3DCore::QAttribute *positionAttribute = findAttribute( geometry, "instancePosition", Qt3DCore::QAttribute::VertexAttribute );
     if ( !positionAttribute )
     {
       QgsDebugError( QString( "Cannot export '%1' - geometry has no position attribute!" ).arg( objectNamePrefix ) );
@@ -850,13 +861,26 @@ Qgs3DExportObject *Qgs3DSceneExporter::processPoints( Qt3DCore::QEntity *entity,
   return obj;
 }
 
-bool Qgs3DSceneExporter::save( const QString &sceneName, const QString &sceneFolderPath, int precision ) const
+bool Qgs3DSceneExporter::save( QString sceneName, QString sceneFolderPath, const Qgis::Export3DSceneFormat &exportFormat, int precision ) const
 {
   if ( mObjects.isEmpty() )
   {
     return false;
   }
 
+  switch ( exportFormat )
+  {
+    case Qgis::Export3DSceneFormat::Obj:
+      return saveObj( sceneName, sceneFolderPath, precision );
+    case Qgis::Export3DSceneFormat::StlAscii:
+      return saveStl( sceneName, sceneFolderPath, precision );
+  }
+
+  BUILTIN_UNREACHABLE
+}
+
+bool Qgs3DSceneExporter::saveObj( QString sceneName, QString sceneFolderPath, int precision ) const
+{
   const QString objFilePath = QDir( sceneFolderPath ).filePath( sceneName + u".obj"_s );
   const QString mtlFilePath = QDir( sceneFolderPath ).filePath( sceneName + u".mtl"_s );
 
@@ -873,23 +897,9 @@ bool Qgs3DSceneExporter::save( const QString &sceneName, const QString &sceneFol
     return false;
   }
 
-  float maxfloat = std::numeric_limits<float>::max(), minFloat = std::numeric_limits<float>::lowest();
-  float minX = maxfloat, minY = maxfloat, minZ = maxfloat, maxX = minFloat, maxY = minFloat, maxZ = minFloat;
-  for ( Qgs3DExportObject *obj : qAsConst( mObjects ) )
-  {
-    obj->objectBounds( minX, minY, minZ, maxX, maxY, maxZ );
-  }
-
-  float diffX = 1.0f, diffY = 1.0f, diffZ = 1.0f;
-  diffX = maxX - minX;
-  diffY = maxY - minY;
-  diffZ = maxZ - minZ;
-
-  const float centerX = ( minX + maxX ) / 2.0f;
-  const float centerY = ( minY + maxY ) / 2.0f;
-  const float centerZ = ( minZ + maxZ ) / 2.0f;
-
-  const float scale = std::max( diffX, std::max( diffY, diffZ ) );
+  QVector3D center;
+  float scale;
+  getSceneCenterAndScale( center, scale );
 
   QTextStream out( &file );
   // set material library name
@@ -897,20 +907,73 @@ bool Qgs3DSceneExporter::save( const QString &sceneName, const QString &sceneFol
   out << "mtllib " << mtlLibName << "\n";
 
   QTextStream mtlOut( &mtlFile );
-  for ( Qgs3DExportObject *obj : qAsConst( mObjects ) )
+  for ( Qgs3DExportObject *obj : std::as_const( mObjects ) )
   {
     if ( !obj )
       continue;
-    // Set object name
-    const QString material = obj->saveMaterial( mtlOut, sceneFolderPath );
-    out << "o " << obj->name() << "\n";
-    if ( material != QString() )
-      out << "usemtl " << material << "\n";
-    obj->saveTo( out, scale / mScale, QVector3D( centerX, centerY, centerZ ), precision );
+
+    const QString materialName = obj->saveMaterial( mtlOut, sceneFolderPath );
+    obj->saveTo( out, scale, center, Qgis::Export3DSceneFormat::Obj, precision, materialName );
   }
 
   QgsDebugMsgLevel( u"Scene exported to '%1'"_s.arg( objFilePath ), 2 );
   return true;
+}
+
+bool Qgs3DSceneExporter::saveStl( QString sceneName, QString sceneFolderPath, int precision ) const
+{
+  const QString stlFilePath = QDir( sceneFolderPath ).filePath( sceneName + u".stl"_s );
+
+  QFile file( stlFilePath );
+  if ( !file.open( QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate ) )
+  {
+    QgsDebugError( u"Scene can not be exported to '%1'. File access error."_s.arg( stlFilePath ) );
+    return false;
+  }
+
+  QVector3D center;
+  float scale;
+  getSceneCenterAndScale( center, scale );
+
+  QTextStream out( &file );
+
+  for ( Qgs3DExportObject *object : std::as_const( mObjects ) )
+  {
+    if ( !object )
+      continue;
+
+    object->saveTo( out, scale, center, Qgis::Export3DSceneFormat::StlAscii, precision );
+  }
+
+  QgsDebugMsgLevel( u"Scene exported to '%1'"_s.arg( stlFilePath ), 2 );
+  return true;
+}
+
+void Qgs3DSceneExporter::getSceneCenterAndScale( QVector3D &center, float &scale ) const
+{
+  const float minFloat = std::numeric_limits<float>::lowest();
+  const float maxfloat = std::numeric_limits<float>::max();
+
+  float minX = maxfloat;
+  float minY = maxfloat;
+  float minZ = maxfloat;
+  float maxX = minFloat;
+  float maxY = minFloat;
+  float maxZ = minFloat;
+  for ( Qgs3DExportObject *obj : std::as_const( mObjects ) )
+  {
+    obj->objectBounds( minX, minY, minZ, maxX, maxY, maxZ );
+  }
+
+  const float diffX = maxX - minX;
+  const float diffY = maxY - minY;
+  const float diffZ = maxZ - minZ;
+
+  center.setX( ( minX + maxX ) / 2.0f );
+  center.setY( ( minY + maxY ) / 2.0f );
+  center.setZ( ( minZ + maxZ ) / 2.0f );
+
+  scale = std::max( diffX, std::max( diffY, diffZ ) ) / mScale;
 }
 
 QString Qgs3DSceneExporter::getObjectName( const QString &name )

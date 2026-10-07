@@ -43,6 +43,7 @@
 #include "qgsvectorlayer.h"
 #include "qgsvectortilelayer.h"
 
+#include <QSignalSpy>
 #include <QString>
 #include <QTimer>
 
@@ -118,11 +119,6 @@ void TestQgsIdentify::initTestCase()
 {
   QgsApplication::init();
   QgsApplication::initQgis();
-  // Set up the QgsSettings environment
-  QCoreApplication::setOrganizationName( u"QGIS"_s );
-  QCoreApplication::setOrganizationDomain( u"qgis.org"_s );
-  QCoreApplication::setApplicationName( u"QGIS-TEST"_s );
-
   QgsApplication::showSettings();
 
   // enforce C locale because the tests expect it
@@ -1356,8 +1352,12 @@ void TestQgsIdentify::identifyVirtualPointCloud()
   pointCloud->setCrs( QgsCoordinateReferenceSystem( u"EPSG:28356"_s ) );
   QCOMPARE( pointCloud->crs3D().horizontalCrs().authid(), u"EPSG:28356"_s );
 
+  QSignalSpy spy( pointCloud.get(), &QgsMapLayer::dataChanged );
+
   for ( int i = 0; i < pointCloud->dataProvider()->subIndexes().size(); i++ )
-    pointCloud->dataProvider()->loadSubIndex( i );
+    pointCloud->dataProvider()->loadSubIndex( i, true ); // emit dataChanged signal when done loading
+
+  QVERIFY( spy.wait() );
 
   // set project CRS and ellipsoid
   // Note that using a different CRS here (a world-wide WGS84-based one) caused

@@ -124,12 +124,14 @@ bool QgsFixGeometriesAlgorithm::prepareAlgorithm( const QVariantMap &parameters,
 
 QgsFeatureList QgsFixGeometriesAlgorithm::processFeature( const QgsFeature &feature, QgsProcessingContext &, QgsProcessingFeedback *feedback )
 {
+  QGS_MARK_ALGORITHM_SOURCE
+
   if ( !feature.hasGeometry() )
     return QgsFeatureList() << feature;
 
   QgsFeature outputFeature = feature;
 
-  QgsGeometry outputGeometry = outputFeature.geometry().makeValid( mMethod );
+  QgsGeometry outputGeometry = outputFeature.geometry().makeValid( mMethod, false, feedback );
   if ( outputGeometry.isNull() )
   {
     feedback->pushInfo( QObject::tr( "makeValid failed for feature %1 " ).arg( feature.id() ) );

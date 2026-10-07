@@ -22,7 +22,7 @@ from qgis.core import (
     QgsNotSupportedException,
     QgsSettings,
 )
-from qgis.PyQt.QtCore import QCoreApplication, QTemporaryDir
+from qgis.PyQt.QtCore import QTemporaryDir
 from qgis.PyQt.QtNetwork import QSslCertificate
 from qgis.testing import QgisTestCase, start_app
 from utilities import unitTestDataPath
@@ -46,10 +46,6 @@ class AuthManagerStorageBaseTestCase(QgisTestCase):
         if cls.storage_uri is not None:
             os.environ["QGIS_AUTH_DB_URI"] = cls.storage_uri
 
-        QCoreApplication.setOrganizationName("QGIS_Test")
-        QCoreApplication.setOrganizationDomain("%s.com" % __name__)
-        QCoreApplication.setApplicationName(__name__)
-        QgsSettings().clear()
         start_app()
 
         cls.certdata_path = os.path.join(
@@ -889,12 +885,17 @@ class TestAuthManagerStorageBase:
             self.storage.capabilities()
             & Qgis.AuthConfigurationStorageCapability.UpdateSetting
         ):
-            raise unittest.SkipTest(
-                "Storage does not support reading certificate authorities"
-            )
+            raise unittest.SkipTest("Storage does not support reading settings")
 
         auth_manager = QgsApplication.authManager()
         auth_manager.ensureInitialized()
+
+        # Reset self.storage to point to the instance of QgsAuthConfigurationStorage that is registered with the auth manager
+        self.storage = (
+            QgsApplication.authManager()
+            .authConfigurationStorageRegistry()
+            .storage(self.storage.id())
+        )
 
         temp_dir = QTemporaryDir()
         temp_dir_path = temp_dir.path()

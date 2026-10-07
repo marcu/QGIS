@@ -19,9 +19,8 @@
 #include "qgis.h"
 #include "qgis_gui.h"
 #include "qgis_sip.h"
+#include "qgspanelwidget.h"
 #include "qgspropertycollection.h"
-
-#include <QWidget>
 
 #define SIP_NO_FILE
 
@@ -35,7 +34,7 @@ class QgsVectorLayer;
  * \note Not available in Python bindings
  * \since QGIS 3.16
  */
-class GUI_EXPORT QgsMaterialSettingsWidget : public QWidget
+class GUI_EXPORT QgsMaterialSettingsWidget : public QgsPanelWidget
 {
     Q_OBJECT
 
@@ -54,24 +53,43 @@ class GUI_EXPORT QgsMaterialSettingsWidget : public QWidget
      * Sets the rendering technique which will be used for the symbol. Allows the widget to adapt
      * available settings for the specified \a technique.
      */
-    virtual void setTechnique( Qgis::MaterialRenderingTechnique technique );
+    void setTechnique( Qgis::MaterialRenderingTechnique technique );
 
     /**
      * Returns a new instance of the material settings defined by the widget.
      *
      * Caller takes ownership of the returned settings.
      */
-    virtual QgsAbstractMaterialSettings *settings() = 0 SIP_FACTORY;
-
-  signals:
+    virtual std::unique_ptr< QgsAbstractMaterialSettings > settings() = 0 SIP_FACTORY;
 
     /**
-     * Emitted when the material definition is changed.
+     * Sets the widget \a mode, which controls whether the compact or full
+     * set of material settings controls are shown.
+     *
+     * \since QGIS 4.4
      */
-    void changed();
+    void setMode( Qgis::MaterialWidgetMode mode );
+
+  public slots:
+
+    /**
+     * Sets whether the material preview widget should be visible.
+     */
+    virtual void setPreviewVisible( bool visible ) = 0;
+
+  protected:
+    /**
+     * Updates the visibility of widget controls to reflect the current
+     * technique and style.
+     *
+     * \since QGIS 4.4
+     */
+    virtual void updateWidgetVisibility() = 0;
 
   protected:
     QgsPropertyCollection mPropertyCollection;
+    Qgis::MaterialWidgetMode mMode = Qgis::MaterialWidgetMode::Full;
+    Qgis::MaterialRenderingTechnique mTechnique = Qgis::MaterialRenderingTechnique::Triangles;
 };
 
 #endif // QGSMATERIALSETTINGSWIDGET_H

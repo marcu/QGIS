@@ -217,7 +217,7 @@ void QgsAppLayerHandling::postProcessAddedLayer( QgsMapLayer *layer )
           // if overview of the virtual point cloud exists set the zoom out behavior to show it
           if ( const QgsVirtualPointCloudProvider *vpcProvider = dynamic_cast<QgsVirtualPointCloudProvider *>( pcLayer->dataProvider() ) )
           {
-            renderer3D->setZoomOutBehavior( vpcProvider->overview() ? Qgis::PointCloudZoomOutRenderBehavior::RenderOverview : Qgis::PointCloudZoomOutRenderBehavior::RenderExtents );
+            renderer3D->setZoomOutBehavior( vpcProvider->overviews().isEmpty() ? Qgis::PointCloudZoomOutRenderBehavior::RenderExtents : Qgis::PointCloudZoomOutRenderBehavior::RenderOverview );
           }
           layer->setRenderer3D( renderer3D.release() );
         }
@@ -1499,6 +1499,7 @@ template<typename T> QList<T *> QgsAppLayerHandling::addLayerPrivate( Qgis::Laye
     // contain at most one single layer
     QgsMapLayerFactory::LayerOptions options( QgsProject::instance()->transformContext() );
     options.loadDefaultStyle = false;
+    options.loadAllStoredStyles = true;
     result.push_back( qobject_cast<T *>( QgsMapLayerFactory::createLayer( uri, name, type, options, providerKey ) ) );
     if ( !result.isEmpty() )
     {

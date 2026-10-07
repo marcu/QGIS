@@ -17,6 +17,7 @@
 
 #include "qgsiconutils.h"
 #include "qgsmaplayerlistutils_p.h"
+#include "qgsmaplayerutils.h"
 #include "qgsproject.h"
 #include "qgsvectorlayer.h"
 
@@ -28,26 +29,45 @@
 
 using namespace Qt::StringLiterals;
 
+// TODO QGIS 5.0 Remove deprecated constructor
 QgsMapLayerModel::QgsMapLayerModel( const QList<QgsMapLayer *> &layers, QObject *parent, QgsProject *project )
+  : QgsMapLayerModel( project ? project : QgsProject::instance(), layers, parent ) // skip-keyword-check
+{}
+
+// TODO QGIS 5.0 Remove deprecated constructor
+QgsMapLayerModel::QgsMapLayerModel( QObject *parent, QgsProject *project )
+  : QgsMapLayerModel( project ? project : QgsProject::instance(), parent ) // skip-keyword-check
+{}
+
+QgsMapLayerModel::QgsMapLayerModel( QgsProject *project, const QList<QgsMapLayer *> &layers, QObject *parent )
   : QAbstractItemModel( parent )
-  , mProject( project ? project : QgsProject::instance() ) // skip-keyword-check
+  , mProject( project )
 {
-  connect( mProject, static_cast< void ( QgsProject::* )( const QStringList & ) >( &QgsProject::layersWillBeRemoved ), this, &QgsMapLayerModel::removeLayers );
+  if ( mProject )
+  {
+    connect( mProject, static_cast< void ( QgsProject::* )( const QStringList & ) >( &QgsProject::layersWillBeRemoved ), this, &QgsMapLayerModel::removeLayers );
+  }
   addLayers( layers );
 }
 
-QgsMapLayerModel::QgsMapLayerModel( QObject *parent, QgsProject *project )
+QgsMapLayerModel::QgsMapLayerModel( QgsProject *project, QObject *parent )
   : QAbstractItemModel( parent )
-  , mProject( project ? project : QgsProject::instance() ) // skip-keyword-check
+  , mProject( project )
 {
-  connect( mProject, &QgsProject::layersAdded, this, &QgsMapLayerModel::addLayers );
-  connect( mProject, static_cast< void ( QgsProject::* )( const QStringList & ) >( &QgsProject::layersWillBeRemoved ), this, &QgsMapLayerModel::removeLayers );
-  addLayers( mProject->mapLayers().values() );
+  if ( mProject )
+  {
+    connect( mProject, &QgsProject::layersAdded, this, &QgsMapLayerModel::addLayers );
+    connect( mProject, static_cast< void ( QgsProject::* )( const QStringList & ) >( &QgsProject::layersWillBeRemoved ), this, &QgsMapLayerModel::removeLayers );
+    addLayers( mProject->mapLayers().values() );
+  }
 }
 
 void QgsMapLayerModel::setProject( QgsProject *project )
 {
-  if ( mProject == ( project ? project : QgsProject::instance() ) ) // skip-keyword-check
+  if ( !project )
+    return;
+
+  if ( mProject == project )
     return;
 
   // remove layers from previous project
@@ -58,7 +78,7 @@ void QgsMapLayerModel::setProject( QgsProject *project )
     disconnect( mProject, static_cast< void ( QgsProject::* )( const QStringList & ) >( &QgsProject::layersWillBeRemoved ), this, &QgsMapLayerModel::removeLayers );
   }
 
-  mProject = project ? project : QgsProject::instance(); // skip-keyword-check
+  mProject = project;
 
   connect( mProject, &QgsProject::layersAdded, this, &QgsMapLayerModel::addLayers );
   connect( mProject, static_cast< void ( QgsProject::* )( const QStringList & ) >( &QgsProject::layersWillBeRemoved ), this, &QgsMapLayerModel::removeLayers );
@@ -373,31 +393,7 @@ QVariant QgsMapLayerModel::data( const QModelIndex &index, int role ) const
       QgsMapLayer *layer = mLayers.value( index.row() - ( mAllowEmpty ? 1 : 0 ) );
       if ( layer )
       {
-        QStringList parts;
-        QString title = !layer->metadata().title().isEmpty() ? layer->metadata().title()
-                                                             : ( layer->serverProperties()->title().isEmpty() ? layer->serverProperties()->shortName() : layer->serverProperties()->title() );
-        if ( title.isEmpty() )
-          title = layer->name();
-        title = "<b>" + title + "</b>";
-        if ( layer->isSpatial() && layer->crs().isValid() )
-        {
-          QString layerCrs = layer->crs().authid();
-          if ( !std::isnan( layer->crs().coordinateEpoch() ) )
-          {
-            layerCrs += u" @ %1"_s.arg( qgsDoubleToString( layer->crs().coordinateEpoch(), 3 ) );
-          }
-          if ( QgsVectorLayer *vl = qobject_cast<QgsVectorLayer *>( layer ) )
-            title = tr( "%1 (%2 - %3)" ).arg( title, QgsWkbTypes::displayString( vl->wkbType() ), layerCrs );
-          else
-            title = tr( "%1 (%2)" ).arg( title, layerCrs );
-        }
-        parts << title;
-
-        QString abstract = !layer->metadata().abstract().isEmpty() ? layer->metadata().abstract() : layer->serverProperties()->abstract();
-        if ( !abstract.isEmpty() )
-          parts << "<br/>" + abstract.replace( "\n"_L1, "<br/>"_L1 );
-        parts << "<i>" + layer->publicSource() + "</i>";
-        return parts.join( "<br/>"_L1 );
+        return QgsMapLayerUtils::layerToolTip( layer );
       }
       return QVariant();
     }
@@ -622,4 +618,9 @@ bool QgsMapLayerModel::setData( const QModelIndex &index, const QVariant &value,
   }
 
   return false;
+}
+
+QgsProject *QgsMapLayerModel::project()
+{
+  return mProject;
 }

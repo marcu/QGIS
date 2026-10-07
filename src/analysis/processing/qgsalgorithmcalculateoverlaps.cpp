@@ -135,6 +135,8 @@ bool QgsCalculateVectorOverlapsAlgorithm::prepareAlgorithm( const QVariantMap &p
 
 QVariantMap QgsCalculateVectorOverlapsAlgorithm::processAlgorithm( const QVariantMap &parameters, QgsProcessingContext &context, QgsProcessingFeedback *feedback )
 {
+  QGS_MARK_ALGORITHM_SOURCE
+
   QString destId;
   std::unique_ptr<QgsFeatureSink> sink( parameterAsSink( parameters, u"OUTPUT"_s, context, destId, mOutputFields, mOutputType, mCrs ) );
   if ( !sink )
@@ -214,7 +216,7 @@ QVariantMap QgsCalculateVectorOverlapsAlgorithm::processAlgorithm( const QVarian
             break;
 
           const QgsGeometry overlayGeometry = index.geometry( match );
-          if ( bufferGeomEngine->intersects( overlayGeometry.constGet() ) )
+          if ( bufferGeomEngine->intersects( overlayGeometry.constGet(), nullptr, feedback ) )
           {
             intersectingGeoms.append( overlayGeometry );
           }
@@ -224,12 +226,12 @@ QVariantMap QgsCalculateVectorOverlapsAlgorithm::processAlgorithm( const QVarian
           break;
 
         // dissolve intersecting features, calculate total area of them within our buffer
-        const QgsGeometry overlayDissolved = QgsGeometry::unaryUnion( intersectingGeoms, geometryParameters );
+        const QgsGeometry overlayDissolved = QgsGeometry::unaryUnion( intersectingGeoms, geometryParameters, feedback );
 
         if ( feedback->isCanceled() )
           break;
 
-        const QgsGeometry overlayIntersection = inputGeom.intersection( overlayDissolved, geometryParameters );
+        const QgsGeometry overlayIntersection = inputGeom.intersection( overlayDissolved, geometryParameters, feedback );
 
         double overlayArea = 0;
         try
@@ -258,12 +260,15 @@ QVariantMap QgsCalculateVectorOverlapsAlgorithm::processAlgorithm( const QVarian
     feature.setAttributes( outAttributes );
     if ( !sink->addFeature( feature, QgsFeatureSink::FastInsert ) )
       throw QgsProcessingException( writeFeatureError( sink.get(), parameters, u"OUTPUT"_s ) );
+    else
+      feedback->featureAddedToSink( u"OUTPUT"_s );
 
     i++;
     feedback->setProgress( i * step );
   }
 
   sink->finalize();
+  feedback->featureSinkFinalized( u"OUTPUT"_s );
 
   QVariantMap outputs;
   outputs.insert( u"OUTPUT"_s, destId );

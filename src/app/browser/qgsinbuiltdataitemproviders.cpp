@@ -66,6 +66,7 @@
 #include "qgsrasterlayer.h"
 #include "qgsrelationshipsitem.h"
 #include "qgssettings.h"
+#include "qgssettingsentryimpl.h"
 #include "qgssettingsregistrycore.h"
 #include "qgssourceselectprovider.h"
 #include "qgssourceselectproviderregistry.h"
@@ -284,16 +285,15 @@ void QgsAppDirectoryItemGuiProvider::populateContextMenu( QgsDataItem *item, QMe
 
   QMenu *hiddenMenu = new QMenu( tr( "Hidden Items" ), menu );
   int count = 0;
-  const QStringList hiddenPathList = settings.value( u"/browser/hiddenPaths"_s ).toStringList();
+  const QStringList hiddenPathList = QgsDirectoryItem::settingsHiddenPaths->value();
   static int MAX_HIDDEN_ENTRIES = 5;
   for ( const QString &path : hiddenPathList )
   {
     QAction *action = new QAction( QDir::toNativeSeparators( path ), hiddenMenu );
     connect( action, &QAction::triggered, this, [path] {
-      QgsSettings s;
-      QStringList pathsList = s.value( u"/browser/hiddenPaths"_s ).toStringList();
+      QStringList pathsList = QgsDirectoryItem::settingsHiddenPaths->value();
       pathsList.removeAll( path );
-      s.setValue( u"/browser/hiddenPaths"_s, pathsList );
+      QgsDirectoryItem::settingsHiddenPaths->setValue( pathsList );
 
       // get parent path and refresh corresponding node
       int idx = path.lastIndexOf( '/'_L1 );
@@ -1061,10 +1061,32 @@ void QgsLayerItemGuiProvider::populateContextMenu( QgsDataItem *item, QMenu *men
   if ( !menu->isEmpty() )
     menu->addSeparator();
 
-  const QString addText = selectedItems.count() == 1 ? tr( "Add Layer to Project" ) : tr( "Add Selected Layers to Project" );
-  QAction *addAction = new QAction( addText, menu );
-  connect( addAction, &QAction::triggered, this, [this, selectedItems] { addLayersFromItems( selectedItems ); } );
-  menu->addAction( addAction );
+  QList<QgsLayerItem::LayerUriWithDetails> layerUrisWithDetails;
+  if ( selectedItems.count() == 1 )
+  {
+    if ( QgsLayerItem *layerItem = qobject_cast<QgsLayerItem *>( selectedItems.at( 0 ) ) )
+    {
+      layerUrisWithDetails = layerItem->layerUrisWithDetails();
+    }
+  }
+
+  if ( !layerUrisWithDetails.isEmpty() )
+  {
+    for ( const QgsLayerItem::LayerUriWithDetails &uri : std::as_const( layerUrisWithDetails ) )
+    {
+      const QString addText = tr( "Add %1 to Project" ).arg( uri.userFriendlyDescription );
+      QAction *addAction = new QAction( addText, menu );
+      connect( addAction, &QAction::triggered, this, [uri] { QgisApp::instance()->handleDropUriList( { uri.uri } ); } );
+      menu->addAction( addAction );
+    }
+  }
+  else
+  {
+    const QString addText = selectedItems.count() == 1 ? tr( "Add Layer to Project" ) : tr( "Add Selected Layers to Project" );
+    QAction *addAction = new QAction( addText, menu );
+    connect( addAction, &QAction::triggered, this, [this, selectedItems] { addLayersFromItems( selectedItems ); } );
+    menu->addAction( addAction );
+  }
 
   for ( QAction *action : menu->actions() )
   {
@@ -1095,7 +1117,7 @@ int QgsLayerItemGuiProvider::precedenceWhenPopulatingMenus() const
 
 bool QgsLayerItemGuiProvider::handleDoubleClick( QgsDataItem *item, QgsDataItemGuiContext )
 {
-  if ( !item || item->type() != Qgis::BrowserItemType::Layer )
+  if ( !item )
     return false;
 
   if ( QgsLayerItem *layerItem = qobject_cast<QgsLayerItem *>( item ) )
@@ -1104,10 +1126,7 @@ bool QgsLayerItemGuiProvider::handleDoubleClick( QgsDataItem *item, QgsDataItemG
     QgisApp::instance()->handleDropUriList( layerUriList );
     return true;
   }
-  else
-  {
-    return false;
-  }
+  return false;
 }
 
 void QgsLayerItemGuiProvider::addLayersFromItems( const QList<QgsDataItem *> &items )
@@ -1502,7 +1521,7 @@ void QgsFieldItemGuiProvider::populateContextMenu( QgsDataItem *item, QMenu *men
           connect( setCommentAction, &QAction::triggered, fieldsItem, [md, fieldsItem, itemName, comment, context] {
             bool ok = false;
 
-            const QString newComment = QInputDialog::getMultiLineText( QgisApp::instance(), tr( "Set Comment For %1" ).arg( itemName ), tr( "Comment" ), comment, &ok );
+            const QString newComment = QgsDialog::getMultiLineText( QgisApp::instance(), tr( "Set Comment For %1" ).arg( itemName ), tr( "Comment" ), comment, &ok );
             if ( ok && comment != newComment )
             {
               std::unique_ptr<QgsAbstractDatabaseProviderConnection> conn2 { static_cast<QgsAbstractDatabaseProviderConnection *>( md->createConnection( fieldsItem->connectionUri(), {} ) ) };
@@ -2115,59 +2134,68 @@ void QgsDatabaseItemGuiProvider::populateContextMenu( QgsDataItem *item, QMenu *
          && conn->capabilities().testFlag( QgsAbstractDatabaseProviderConnection::Capability::CreateSpatialIndex )
          && conn->capabilities().testFlag( QgsAbstractDatabaseProviderConnection::Capability::DeleteSpatialIndex ) )
     {
-      QAction *createSpatialIndexAction = new QAction( tr( "Create Spatial Index" ), menu );
-      QAction *deleteSpatialIndexAction = new QAction( tr( "Delete Spatial Index…" ), menu );
-
-      QgsAbstractDatabaseProviderConnection::TableProperty tableProperty = conn->table( item->parent()->name(), item->name() );
-
-      const bool indexExist = conn->spatialIndexExists( tableProperty.schema(), tableProperty.tableName(), tableProperty.geometryColumn() );
-
-      if ( indexExist )
+      bool canHaveIndex = false;
+      bool indexExist = false;
+      QgsAbstractDatabaseProviderConnection::TableProperty tableProperty;
+      try
       {
-        QgsDataItemGuiProviderUtils::addToSubMenu( menu, deleteSpatialIndexAction, tr( "Manage" ) );
+        tableProperty = conn->table( item->parent()->name(), item->name() );
+        canHaveIndex = tableProperty.geometryColumnCount() > 0 && layerItem->mapLayerType() == Qgis::LayerType::Vector;
+        indexExist = conn->spatialIndexExists( tableProperty.schema(), tableProperty.tableName(), tableProperty.geometryColumn() );
       }
-      else
+      catch ( QgsProviderConnectionException & )
       {
-        QgsDataItemGuiProviderUtils::addToSubMenu( menu, createSpatialIndexAction, tr( "Manage" ) );
+        canHaveIndex = false;
       }
 
       const QString connectionUri = conn->uri();
       const QString providerKey = conn->providerKey();
 
-      connect( createSpatialIndexAction, &QAction::triggered, createSpatialIndexAction, [providerKey, connectionUri, tableProperty, context] {
-        QgsProviderMetadata *md { QgsProviderRegistry::instance()->providerMetadata( providerKey ) };
-        if ( !md )
-          return;
+      if ( canHaveIndex && indexExist )
+      {
+        QAction *deleteSpatialIndexAction = new QAction( tr( "Delete Spatial Index…" ), menu );
+        QgsDataItemGuiProviderUtils::addToSubMenu( menu, deleteSpatialIndexAction, tr( "Manage" ) );
 
-        std::unique_ptr<QgsAbstractDatabaseProviderConnection> conn2( qgis::down_cast<QgsAbstractDatabaseProviderConnection *>( md->createConnection( connectionUri, QVariantMap() ) ) );
+        connect( deleteSpatialIndexAction, &QAction::triggered, deleteSpatialIndexAction, [providerKey, connectionUri, tableProperty, context] {
+          if ( QMessageBox::
+                 question( nullptr, tr( "Delete Spatial Index" ), tr( "Are you sure that you want to delete spatial index from %1.%2" ).arg( tableProperty.schema(), tableProperty.tableName() ), QMessageBox::Yes | QMessageBox::No, QMessageBox::No )
+               == QMessageBox::Yes )
+          {
+            QgsProviderMetadata *md { QgsProviderRegistry::instance()->providerMetadata( providerKey ) };
+            if ( !md )
+              return;
 
-        QString errCause;
-        try
-        {
-          QgsTemporaryCursorOverride override( Qt::WaitCursor );
-          conn2->createSpatialIndex( tableProperty.schema(), tableProperty.tableName() );
-        }
-        catch ( QgsProviderConnectionException &ex )
-        {
-          errCause = ex.what();
-        }
+            std::unique_ptr<QgsAbstractDatabaseProviderConnection> conn2( qgis::down_cast<QgsAbstractDatabaseProviderConnection *>( md->createConnection( connectionUri, QVariantMap() ) ) );
 
-        if ( !errCause.isEmpty() )
-        {
-          notify( tr( "Cannot create spatial index on %1.%2" ).arg( tableProperty.schema(), tableProperty.tableName() ), errCause, context, Qgis::MessageLevel::Critical );
-          return;
-        }
-        else if ( context.messageBar() )
-        {
-          context.messageBar()->pushMessage( tr( "Spatial index created on %1.%2" ).arg( tableProperty.schema(), tableProperty.tableName() ), Qgis::MessageLevel::Success );
-        }
-      } );
+            QString errCause;
+            try
+            {
+              QgsTemporaryCursorOverride override( Qt::WaitCursor );
+              conn2->deleteSpatialIndex( tableProperty.schema(), tableProperty.tableName(), tableProperty.geometryColumn() );
+            }
+            catch ( QgsProviderConnectionException &ex )
+            {
+              errCause = ex.what();
+            }
 
-      connect( deleteSpatialIndexAction, &QAction::triggered, deleteSpatialIndexAction, [providerKey, connectionUri, tableProperty, context] {
-        if ( QMessageBox::
-               question( nullptr, tr( "Delete Spatial Index" ), tr( "Are you sure that you want to delete spatial index from %1.%2" ).arg( tableProperty.schema(), tableProperty.tableName() ), QMessageBox::Yes | QMessageBox::No, QMessageBox::No )
-             == QMessageBox::Yes )
-        {
+            if ( !errCause.isEmpty() )
+            {
+              notify( tr( "Cannot delete spatial index on %1.%2" ).arg( tableProperty.schema(), tableProperty.tableName() ), errCause, context, Qgis::MessageLevel::Critical );
+              return;
+            }
+            else if ( context.messageBar() )
+            {
+              context.messageBar()->pushMessage( tr( "Spatial index deleted on %1.%2" ).arg( tableProperty.schema(), tableProperty.tableName() ), Qgis::MessageLevel::Success );
+            }
+          }
+        } );
+      }
+      else if ( canHaveIndex && !indexExist )
+      {
+        QAction *createSpatialIndexAction = new QAction( tr( "Create Spatial Index" ), menu );
+        QgsDataItemGuiProviderUtils::addToSubMenu( menu, createSpatialIndexAction, tr( "Manage" ) );
+
+        connect( createSpatialIndexAction, &QAction::triggered, createSpatialIndexAction, [providerKey, connectionUri, tableProperty, context] {
           QgsProviderMetadata *md { QgsProviderRegistry::instance()->providerMetadata( providerKey ) };
           if ( !md )
             return;
@@ -2178,7 +2206,7 @@ void QgsDatabaseItemGuiProvider::populateContextMenu( QgsDataItem *item, QMenu *
           try
           {
             QgsTemporaryCursorOverride override( Qt::WaitCursor );
-            conn2->deleteSpatialIndex( tableProperty.schema(), tableProperty.tableName(), tableProperty.geometryColumn() );
+            conn2->createSpatialIndex( tableProperty.schema(), tableProperty.tableName() );
           }
           catch ( QgsProviderConnectionException &ex )
           {
@@ -2187,18 +2215,21 @@ void QgsDatabaseItemGuiProvider::populateContextMenu( QgsDataItem *item, QMenu *
 
           if ( !errCause.isEmpty() )
           {
-            notify( tr( "Cannot delete spatial index on %1.%2" ).arg( tableProperty.schema(), tableProperty.tableName() ), errCause, context, Qgis::MessageLevel::Critical );
+            notify( tr( "Cannot create spatial index on %1.%2" ).arg( tableProperty.schema(), tableProperty.tableName() ), errCause, context, Qgis::MessageLevel::Critical );
             return;
           }
           else if ( context.messageBar() )
           {
-            context.messageBar()->pushMessage( tr( "Spatial index deleted on %1.%2" ).arg( tableProperty.schema(), tableProperty.tableName() ), Qgis::MessageLevel::Success );
+            context.messageBar()->pushMessage( tr( "Spatial index created on %1.%2" ).arg( tableProperty.schema(), tableProperty.tableName() ), Qgis::MessageLevel::Success );
           }
-        }
-      } );
+        } );
+      }
     }
 
-    if ( isTable && conn && conn->capabilities2().testFlag( Qgis::DatabaseProviderConnectionCapability2::SetTableComment ) )
+    if ( isTable
+         && layerItem->layerCapabilities().testFlag( Qgis::LayerItemCapability::AddComments )
+         && conn
+         && conn->capabilities2().testFlag( Qgis::DatabaseProviderConnectionCapability2::SetTableComment ) )
     {
       QAction *editComment = new QAction( tr( "Set Comment…" ), menu );
 
@@ -2225,12 +2256,24 @@ void QgsDatabaseItemGuiProvider::populateContextMenu( QgsDataItem *item, QMenu *
         else
           fullName = u"%1.%2"_s.arg( schemaName, tableName );
 
+        bool ok = false;
+
         if ( conn2 )
         {
-          const QString comment = conn2->table( schemaName, tableName ).comment();
+          QString comment;
+          QString newComment;
 
-          bool ok = false;
-          const QString newComment = QInputDialog::getMultiLineText( QgisApp::instance(), tr( "Table Comment" ), tr( "Comment" ), comment, &ok );
+          try
+          {
+            comment = conn2->table( schemaName, tableName ).comment();
+          }
+          catch ( QgsProviderConnectionException &ex )
+          {
+            errCause = ex.what();
+          }
+
+          if ( errCause.isEmpty() )
+            newComment = QgsDialog::getMultiLineText( QgisApp::instance(), tr( "Table Comment" ), tr( "Comment" ), comment, &ok );
 
           if ( ok && comment != newComment )
           {
@@ -2255,7 +2298,7 @@ void QgsDatabaseItemGuiProvider::populateContextMenu( QgsDataItem *item, QMenu *
           notify( tr( "Cannot edit comment on %1" ).arg( fullName ), errCause, context, Qgis::MessageLevel::Critical );
           return;
         }
-        else if ( context.messageBar() )
+        else if ( ok && context.messageBar() )
         {
           if ( item->parent() )
             item->parent()->refresh();
@@ -2369,7 +2412,7 @@ bool QgsDatabaseItemGuiProvider::handleDrop( QgsDataItem *item, QgsDataItemGuiCo
       if ( dropUri.layerType == "vector"_L1 )
       {
         // open the source layer
-        srcLayer = dropUri.vectorLayer( owner, error );
+        srcLayer = dropUri.vectorLayer( owner, error, QgsProject::instance() );
       }
       else
       {
@@ -2531,7 +2574,7 @@ void QgsDatabaseItemGuiProvider::openSqlDialog( const QString &connectionUri, co
 
   QgsQueryResultMainWindow *dialog = new QgsQueryResultMainWindow( conn.release(), identifierName );
   dialog->setAttribute( Qt::WA_DeleteOnClose );
-  dialog->setStyleSheet( QgisApp::instance()->styleSheet() );
+  dialog->setStyleSheet( QgsGui::applicationStyleSheet() );
 
   dialog->resultWidget()->setQuery( query );
 

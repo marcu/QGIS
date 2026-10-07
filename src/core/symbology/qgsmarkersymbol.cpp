@@ -25,12 +25,12 @@
 
 std::unique_ptr< QgsMarkerSymbol > QgsMarkerSymbol::createSimple( const QVariantMap &properties )
 {
-  QgsSymbolLayer *sl = QgsSimpleMarkerSymbolLayer::create( properties );
+  std::unique_ptr<QgsSymbolLayer> sl = QgsSimpleMarkerSymbolLayer::create( properties );
   if ( !sl )
     return nullptr;
 
   QgsSymbolLayerList layers;
-  layers.append( sl );
+  layers.append( sl.release() );
   return std::make_unique< QgsMarkerSymbol >( layers );
 }
 
@@ -568,7 +568,7 @@ void QgsMarkerSymbol::renderPoint( QPointF point, const QgsFeature *f, QgsRender
         break;
     }
 
-    const QgsGeometry bufferedGeometry = renderedShape.buffer( bufferSize, 8, Qgis::EndCapStyle::Round, joinStyle, 2 );
+    const QgsGeometry bufferedGeometry = renderedShape.buffer( bufferSize, 8, Qgis::EndCapStyle::Round, joinStyle, 2, context.feedback() );
     const QList<QList<QPolygonF> > polygons = QgsSymbolLayerUtils::toQPolygonF( bufferedGeometry, Qgis::SymbolType::Fill );
     for ( const QList< QPolygonF > &polygon : polygons )
     {

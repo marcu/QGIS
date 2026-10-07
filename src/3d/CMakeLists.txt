@@ -7,6 +7,7 @@ set(QGIS_3D_SRCS
   qgs3daxissettings.cpp
   qgsaabb.cpp
   qgsabstract3dengine.cpp
+  qgsabstractfeaturebasedchunkedentity.cpp
   qgsabstractvectorlayer3drenderer.cpp
   qgsannotationlayer3drenderer.cpp
   qgsannotationlayerchunkloader_p.cpp
@@ -18,22 +19,30 @@ set(QGIS_3D_SRCS
   qgs3dmapsettings.cpp
   qgs3dmaptool.cpp
   qgs3dmapcanvas.cpp
+  qgscolorgradingsettings.cpp
   qgscrosssection.cpp
   qgs3drendercontext.cpp
   qgs3dsceneexporter.cpp
   qgs3dutils.cpp
   qgs3dwiredmesh_p.cpp
+  qgsbloomsettings.cpp
   qgscameracontroller.cpp
   qgscamerapose.cpp
+  qgscategorized3drenderer.cpp
+  qgscategorizedchunkloader_p.cpp
+  qgsenvironmentlight.cpp
   qgsfeature3dhandler_p.cpp
   qgsfonttextureatlasgenerator.cpp
   qgsgeotransform.cpp
   qgsglobechunkedentity.cpp
+  qgsglobeutils_p.cpp
   qgsgltf3dutils.cpp
   qgsimagetexture.cpp
   qgslayoutitem3dmap.cpp
+  qgslayerstylewatcher.cpp
   qgsmapoverlayentity.cpp
   qgsmapoverlaytexturegenerator_p.cpp
+  qgsobj3dutils.cpp
   qgsoffscreen3dengine.cpp
   qgsraycastingutils.cpp
   qgsraycastcontext.cpp
@@ -49,6 +58,8 @@ set(QGIS_3D_SRCS
   qgsvectorlayerchunkloader_p.cpp
   qgsmeshlayer3drenderer.cpp
   qgswindow3dengine.cpp
+  qgsfixedgradientbackgroundsettings.cpp
+  qgsgradientbackgroundentity.cpp
   qgsskyboxentity.cpp
   qgsskyboxsettings.cpp
   qgsshadowsettings.cpp
@@ -71,20 +82,25 @@ set(QGIS_3D_SRCS
   lights/qgsdirectionallightsettings.cpp
   lights/qgslightsource.cpp
   lights/qgspointlightsettings.cpp
+  lights/qgssunlightsettings.cpp
 
   materials/qgsglobematerial.cpp
+  materials/qgsgoochmaterial.cpp
   materials/qgsgoochmaterial3dhandler.cpp
-  materials/qgshighlightmaterial.cpp
   materials/qgsmaterial.cpp
   materials/qgsmaterial3dhandler.cpp
   materials/qgsmetalroughmaterial.cpp
   materials/qgsmetalroughmaterial3dhandler.cpp
+  materials/qgsmetalroughtexturedmaterial3dhandler.cpp
   materials/qgsnullmaterial3dhandler.cpp
+  materials/qgsphongmaterial.cpp
   materials/qgsphongmaterial3dhandler.cpp
   materials/qgsphongtexturedmaterial.cpp
   materials/qgsphongtexturedmaterial3dhandler.cpp
   materials/qgssimplelinematerial3dhandler.cpp
   materials/qgstexturematerial.cpp
+  materials/qgsunlitmaterial.cpp
+  materials/qgsunlitmaterial3dhandler.cpp
 
   processing/qgs3dalgorithms.cpp
   processing/qgsalgorithmtessellate.cpp
@@ -94,6 +110,9 @@ set(QGIS_3D_SRCS
   framegraph/qgsambientocclusionrenderentity.cpp
   framegraph/qgsambientocclusionrenderview.cpp
   framegraph/qgsambientocclusionblurentity.cpp
+  framegraph/qgsbloomdownsampleentity.cpp
+  framegraph/qgsbloomrenderview.cpp
+  framegraph/qgsbloomupsampleentity.cpp
   framegraph/qgsdepthentity.cpp
   framegraph/qgsdepthrenderview.cpp
   framegraph/qgsforwardrenderview.cpp
@@ -102,10 +121,13 @@ set(QGIS_3D_SRCS
   framegraph/qgsoverlaytexturerenderview.cpp
   framegraph/qgspostprocessingentity.cpp
   framegraph/qgsrenderpassquad.cpp
+  framegraph/qgsrubberbandrenderview.cpp
+  framegraph/qgspostprocessingrenderview.cpp
   framegraph/qgsshadowrenderview.cpp
   framegraph/qgsframegraph.cpp
   framegraph/qgsframegraphutils.cpp
 
+  symbols/qgs3dsymbolutils.cpp
   symbols/qgsbillboardgeometry.cpp
   symbols/qgsline3dsymbol.cpp
   symbols/qgsline3dsymbol_p.cpp
@@ -162,23 +184,31 @@ set(QGIS_3D_HDRS
   qgs3dtypes.h
   qgs3dutils.h
   qgs3dmapcanvas.h
+  qgscolorgradingsettings.h
   qgscrosssection.h
   qgs3dwiredmesh_p.h
   qgsaabb.h
   qgsabstract3dengine.h
+  qgsabstractfeaturebasedchunkedentity.h
   qgsabstractvectorlayer3drenderer.h
   qgsannotationlayer3drenderer.h
   qgsannotationlayerchunkloader_p.h
+  qgsbloomsettings.h
   qgscameracontroller.h
   qgscamerapose.h
+  qgscategorized3drenderer.h
+  qgscategorizedchunkloader_p.h
+  qgsenvironmentlight.h
   qgsfonttextureatlasgenerator.h
   qgsgeotransform.h
   qgsglobechunkedentity.h
   qgsgltf3dutils.h
   qgslayoutitem3dmap.h
+  qgslayerstylewatcher.h
   qgsmapoverlayentity.h
   qgsmapoverlaytexturegenerator_p.h
   qgsmeshlayer3drenderer.h
+  qgsobj3dutils.h
   qgsoffscreen3dengine.h
   qgsraycastingutils.h
   qgsraycastcontext.h
@@ -191,6 +221,9 @@ set(QGIS_3D_HDRS
   qgstilingscheme.h
   qgsvectorlayer3drenderer.h
   qgswindow3dengine.h
+  qgsabstract3dmapbackgroundsettings.h
+  qgsfixedgradientbackgroundsettings.h
+  qgsgradientbackgroundentity.h
   qgsskyboxentity.h
   qgsskyboxsettings.h
   qgsshadowsettings.h
@@ -201,26 +234,34 @@ set(QGIS_3D_HDRS
   lights/qgsdirectionallightsettings.h
   lights/qgslightsource.h
   lights/qgspointlightsettings.h
+  lights/qgssunlightsettings.h
 
   materials/qgsglobematerial.h
+  materials/qgsgoochmaterial.h
   materials/qgsgoochmaterial3dhandler.h
-  materials/qgshighlightmaterial.h
   materials/qgsmaterial.h
   materials/qgsmaterial3dhandler.cpp
   materials/qgsmetalroughmaterial.h
   materials/qgsmetalroughmaterial3dhandler.h
+  materials/qgsmetalroughtexturedmaterial3dhandler.h
   materials/qgsnullmaterial3dhandler.h
+  materials/qgsphongmaterial.h
   materials/qgsphongmaterial3dhandler.h
   materials/qgsphongtexturedmaterial.h
   materials/qgsphongtexturedmaterial3dhandler.h
   materials/qgssimplelinematerial3dhandler.h
   materials/qgstexturematerial.h
+  materials/qgsunlitmaterial.h
+  materials/qgsunlitmaterial3dhandler.h
 
   framegraph/qgsabstractrenderview.h
   framegraph/qgs3daxisrenderview.h
   framegraph/qgsambientocclusionrenderentity.h
   framegraph/qgsambientocclusionrenderview.h
   framegraph/qgsambientocclusionblurentity.h
+  framegraph/qgsbloomdownsampleentity.h
+  framegraph/qgsbloomrenderview.h
+  framegraph/qgsbloomupsampleentity.h
   framegraph/qgsdepthentity.h
   framegraph/qgsdepthrenderview.h
   framegraph/qgsforwardrenderview.h
@@ -231,8 +272,11 @@ set(QGIS_3D_HDRS
   framegraph/qgsoverlaytexturerenderview.h
   framegraph/qgspostprocessingentity.h
   framegraph/qgsrenderpassquad.h
+  framegraph/qgspostprocessingrenderview.h
+  framegraph/qgsrubberbandrenderview.h
   framegraph/qgsshadowrenderview.h
 
+  symbols/qgs3dsymbolutils.h
   symbols/qgsbillboardgeometry.h
   symbols/qgsline3dsymbol.h
   symbols/qgsmesh3dsymbol.h
@@ -266,6 +310,7 @@ set(QGIS_3D_HDRS
 )
 
 set(QGIS_3D_PRIVATE_HDRS
+  qgsglobeutils_p.h
   qgsrulebasedchunkloader_p.h
   qgsvectorlayerchunkloader_p.h
   qgspointcloudlayerchunkloader_p.h
@@ -331,6 +376,8 @@ target_include_directories(qgis_3d PUBLIC
   ${CMAKE_SOURCE_DIR}/external/delaunator-cpp
   ${CMAKE_SOURCE_DIR}/external/tinygltf
   ${CMAKE_SOURCE_DIR}/external/rectpack2D
+  ${CMAKE_SOURCE_DIR}/external/tinyobj
+  ${CMAKE_SOURCE_DIR}/external/earcut
 )
 
 target_link_libraries(qgis_3d

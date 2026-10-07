@@ -50,19 +50,21 @@ class QgsEditFormConfigPrivate : public QSharedData
       , mFields( o.mFields )
     {}
 
-    ~QgsEditFormConfigPrivate() { delete mInvisibleRootContainer; }
+    ~QgsEditFormConfigPrivate() {}
 
     static QgsPropertiesDefinition &propertyDefinitions()
     {
       static QgsPropertiesDefinition sPropertyDefinitions {
         { static_cast< int >( QgsEditFormConfig::DataDefinedProperty::Alias ), QgsPropertyDefinition( "dataDefinedAlias", QObject::tr( "Alias" ), QgsPropertyDefinition::String ) },
         { static_cast< int >( QgsEditFormConfig::DataDefinedProperty::Editable ), QgsPropertyDefinition( "dataDefinedEditable", QObject::tr( "Editable" ), QgsPropertyDefinition::Boolean ) },
+        { static_cast< int >( QgsEditFormConfig::DataDefinedProperty::CustomComment ),
+          QgsPropertyDefinition( "dataDefinedCustomComment", QObject::tr( "CustomComment" ), QgsPropertyDefinition::String ) },
       };
       return sPropertyDefinitions;
     };
 
     //! The invisible root container for attribute editors in the drag and drop designer
-    QgsAttributeEditorContainer *mInvisibleRootContainer = nullptr;
+    std::unique_ptr<QgsAttributeEditorContainer> mInvisibleRootContainer;
 
     //! This flag is set if the root container was configured by the user
     bool mConfiguredRootContainer = false;

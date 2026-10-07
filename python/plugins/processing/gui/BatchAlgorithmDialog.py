@@ -20,6 +20,7 @@ __date__ = "August 2012"
 __copyright__ = "(C) 2012, Victor Olaya"
 
 import time
+from typing import Optional
 
 from qgis.core import (
     QgsProcessingOutputBoolean,
@@ -29,18 +30,22 @@ from qgis.core import (
     QgsProject,
 )
 from qgis.gui import QgsProcessingBatchAlgorithmDialogBase
+from qgis.PyQt.QtWidgets import QMainWindow
 from qgis.utils import iface
 
 from processing.core.ProcessingResults import resultsList
 from processing.gui.BatchPanel import BatchPanel
-from processing.gui.Postprocessing import handleAlgorithmResults
 from processing.tools import dataobjects
 from processing.tools.system import getTempFilename
 
 
 class BatchAlgorithmDialog(QgsProcessingBatchAlgorithmDialogBase):
-    def __init__(self, alg, parent=None):
-        super().__init__(parent)
+    def __init__(
+        self,
+        alg,
+        parent: Optional[QMainWindow] = None,
+    ):
+        super().__init__(parent or (iface and iface.mainWindow()))
 
         self.setAlgorithm(alg)
 
@@ -56,14 +61,15 @@ class BatchAlgorithmDialog(QgsProcessingBatchAlgorithmDialogBase):
         self.close()
 
         alg_instance = self.algorithm().create()
-        dlg = alg_instance.createCustomParametersWidget(parent=iface.mainWindow())
-        if not dlg:
-            from processing.gui.AlgorithmDialog import AlgorithmDialog
+        widget = alg_instance.createCustomParametersWidget(parent=iface.mainWindow())
+        if not widget:
+            from processing.gui.algorithm_widget import AlgorithmWidget
 
-            dlg = AlgorithmDialog(alg_instance, parent=iface.mainWindow())
+            widget = AlgorithmWidget(
+                alg_instance, parent=(iface and iface.mainWindow())
+            )
 
-        dlg.show()
-        dlg.exec()
+        widget.exec()
 
     def processingContext(self):
         if self.context is None:
@@ -95,9 +101,6 @@ class BatchAlgorithmDialog(QgsProcessingBatchAlgorithmDialogBase):
 
         self.execute(alg_parameters)
 
-    def handleAlgorithmResults(self, algorithm, context, feedback, parameters):
-        handleAlgorithmResults(algorithm, context, feedback, parameters)
-
     def loadHtmlResults(self, results, num):
         for out in self.algorithm().outputDefinitions():
             if (
@@ -109,6 +112,7 @@ class BatchAlgorithmDialog(QgsProcessingBatchAlgorithmDialogBase):
                     icon=self.algorithm().icon(),
                     name=f"{out.description()} [{num}]",
                     result=results[out.name()],
+                    timestamp=time.localtime(),
                 )
 
     def createSummaryTable(self, algorithm_results, errors):

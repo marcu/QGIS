@@ -18,9 +18,13 @@
 #include "qgswmsrendercontext.h"
 
 #include "qgslayertree.h"
+#include "qgslayertreegroup.h"
+#include "qgsmaplayertemporalproperties.h"
 #include "qgsrasterlayer.h"
 #include "qgsserverprojectutils.h"
+#include "qgswmslayerinfos.h"
 #include "qgswmsserviceexception.h"
+#include "qgswmsutils.h"
 
 #include <QString>
 
@@ -47,7 +51,6 @@ void QgsWmsRenderContext::setParameters( const QgsWmsParameters &parameters )
 
   initRestrictedLayers();
   initNicknameLayers();
-
   searchLayersToRender();
   removeUnwantedLayers();
 
@@ -247,6 +250,11 @@ QList<QgsMapLayer *> QgsWmsRenderContext::layers() const
   return mNicknameLayers.values();
 }
 
+QHash<const QgsMapLayer *, QStringList> QgsWmsRenderContext::acceptableLayersToRender() const
+{
+  return mAcceptableLayersToRender;
+}
+
 double QgsWmsRenderContext::scaleDenominator() const
 {
   double denominator = -1;
@@ -396,6 +404,67 @@ void QgsWmsRenderContext::initLayerGroupsRecursive( const QgsLayerTreeGroup *gro
       initLayerGroupsRecursive( group, name );
     }
   }
+
+  // temporal range could be already defined for a layer contained in a hierarchy of group
+  // with different default values. In that case, we assume here that this is the group higher in the
+  // hierarchy which has the precedence and set the default value.
+  // This is implied here by calling initPerLayerTemporalRange() AFTER initLayerGroupsRecursive()
+  initPerLayerTemporalRange( group, groupName );
+}
+
+void QgsWmsRenderContext::initPerLayerTemporalRange( const QgsLayerTreeGroup *group, const QString &groupName )
+{
+  if ( groupName.isEmpty() )
+    return;
+
+  // TIME parameter override time dimension default value
+  const QString timeString { mParameters.dimensionValues().value( u"TIME"_s, QString() ) };
+  if ( !timeString.isEmpty() )
+    return;
+
+  const QgsMapLayerServerProperties *serverProperties = group->serverProperties();
+  const QList<QgsMapLayerServerProperties::WmsDimensionInfo> wmsDimensions = serverProperties->wmsDimensions();
+  auto it = std::find_if( wmsDimensions.constBegin(), wmsDimensions.constEnd(), []( const QgsMapLayerServerProperties::WmsDimensionInfo &dim ) {
+    return dim.name == QgsServerWmsDimensionProperties::TIME_DIMENSION_NAME;
+  } );
+
+  if ( it != wmsDimensions.constEnd() )
+  {
+    bool wmsLayerInfosInitialized = false;
+    QMap<QString, QgsWmsLayerInfos> wmsLayerInfos;
+    QList<QgsDateTimeRange> childrenDateRanges;
+    QDateTime defaultDateTime;
+    switch ( it->defaultDisplayType )
+    {
+      case Qgis::WmsDimensionDefaultDisplay::MinValue:
+      case Qgis::WmsDimensionDefaultDisplay::MaxValue:
+
+        if ( !wmsLayerInfosInitialized )
+        {
+          wmsLayerInfos = QgsWmsLayerInfos::buildWmsLayerInfos( mInterface, mProject );
+          wmsLayerInfosInitialized = true;
+        }
+
+        QgsWms::getChildRanges( group, wmsLayerInfos, mRestrictedLayers, childrenDateRanges );
+
+        defaultDateTime = it->defaultDisplayType == Qgis::WmsDimensionDefaultDisplay::MinValue ? QgsDateTimeRange::min( childrenDateRanges ) : QgsDateTimeRange::max( childrenDateRanges );
+        break;
+
+      case Qgis::WmsDimensionDefaultDisplay::ReferenceValue:
+        defaultDateTime = it->referenceValue().toDateTime();
+        break;
+
+      case Qgis::WmsDimensionDefaultDisplay::AllValues:
+        // no default time
+        break;
+    }
+
+    if ( defaultDateTime.isValid() )
+    {
+      for ( QgsMapLayer *layer : mLayerGroups[groupName] )
+        mPerLayerTemporalRange[layer] = QgsDateTimeRange( defaultDateTime, defaultDateTime );
+    }
+  }
 }
 
 void QgsWmsRenderContext::initRestrictedLayers()
@@ -452,38 +521,33 @@ void QgsWmsRenderContext::searchLayersToRender()
     searchLayersToRenderStyle();
   }
 
+  QStringList nicknames;
   if ( mFlags & AddQueryLayers )
-  {
-    const QStringList queryLayerNames = flattenedQueryLayers( mParameters.queryLayersNickname() );
-    for ( const QString &layerName : queryLayerNames )
-    {
-      const QList<QgsMapLayer *> layers = mNicknameLayers.values( layerName );
-      for ( QgsMapLayer *lyr : layers )
-      {
-        if ( !mLayersToRender.contains( lyr ) )
-        {
-          if ( !addLayerToRender( lyr ) )
-          {
-            throw QgsSecurityException( u"Your are not allowed to access the layer %1"_s.arg( lyr->name() ) );
-          }
-        }
-      }
-    }
-  }
+    nicknames << mParameters.queryLayersNickname();
 
   if ( mFlags & AddAllLayers )
+    nicknames << mParameters.allLayersNickname();
+
+  if ( !nicknames.isEmpty() )
   {
-    const QStringList queryLayerNames = flattenedQueryLayers( mParameters.allLayersNickname() );
+    // Throw a LayerNotDefined when one of the requested layers or groups is not leading to a result, otherwise return the layers to render
+    mAcceptableLayersToRender = acceptableLayers( nicknames );
+    const QStringList queryLayerNames = flattenedQueryLayers( nicknames );
     for ( const QString &layerName : queryLayerNames )
     {
       const QList<QgsMapLayer *> layers = mNicknameLayers.values( layerName );
+
       for ( QgsMapLayer *lyr : layers )
       {
         if ( !mLayersToRender.contains( lyr ) )
         {
+          if ( !mAcceptableLayersToRender.contains( lyr ) )
+          {
+            continue;
+          }
           if ( !addLayerToRender( lyr ) )
           {
-            throw QgsSecurityException( u"Your are not allowed to access the layer %1"_s.arg( lyr->name() ) );
+            throw QgsSecurityException( u"You are not allowed to access the layer %1"_s.arg( lyr->name() ) );
           }
         }
       }
@@ -513,6 +577,16 @@ void QgsWmsRenderContext::searchLayersToRenderSld()
   }
 
   QDomNodeList named = docEl.elementsByTagName( "NamedLayer" );
+
+  QStringList requestedSldLayerNames;
+  for ( int i = 0; i < named.size(); ++i )
+  {
+    requestedSldLayerNames.append( named.item( i ).firstChildElement( u"Name"_s ).text() );
+  }
+
+  // Throw a LayerNotDefined when one of the requested layers or groups is not leading to a result, otherwise return the layers to render
+  mAcceptableLayersToRender = acceptableLayers( requestedSldLayerNames );
+
   for ( int i = 0; i < named.size(); ++i )
   {
     QDomNodeList names = named.item( i ).toElement().elementsByTagName( "Name" );
@@ -524,9 +598,13 @@ void QgsWmsRenderContext::searchLayersToRenderSld()
         mSlds[lname] = namedElem;
         for ( const auto layer : mNicknameLayers.values( lname ) )
         {
+          if ( !mAcceptableLayersToRender.contains( layer ) )
+          {
+            continue;
+          }
           if ( !addLayerToRender( layer ) )
           {
-            throw QgsSecurityException( u"Your are not allowed to access the layer %1"_s.arg( layer->name() ) );
+            throw QgsSecurityException( u"You are not allowed to access the layer %1"_s.arg( layer->name() ) );
           }
         }
       }
@@ -542,6 +620,10 @@ void QgsWmsRenderContext::searchLayersToRenderSld()
         bool layerAdded = false;
         for ( QgsMapLayer *layer : mLayerGroups[lname] )
         {
+          if ( !mAcceptableLayersToRender.contains( layer ) )
+          {
+            continue;
+          }
           // Insert only allowed layers
           if ( checkLayerReadPermissions( layer ) )
           {
@@ -572,6 +654,9 @@ void QgsWmsRenderContext::searchLayersToRenderSld()
 
 void QgsWmsRenderContext::searchLayersToRenderStyle()
 {
+  // Throw a LayerNotDefined when one of the requested layers or groups is not leading to a result, otherwise return the layers to render
+  mAcceptableLayersToRender = acceptableLayers( mParameters.allLayersNickname() );
+
   for ( const QgsWmsParametersLayer &param : mParameters.layersParameters() )
   {
     const QString nickname = param.mNickname;
@@ -588,7 +673,7 @@ void QgsWmsRenderContext::searchLayersToRenderStyle()
         auto lyr = mExternalLayers.last();
         if ( !addLayerToRender( lyr ) )
         {
-          throw QgsSecurityException( u"Your are not allowed to access the layer %1"_s.arg( lyr->name() ) );
+          throw QgsSecurityException( u"You are not allowed to access the layer %1"_s.arg( lyr->name() ) );
         }
       }
     }
@@ -601,9 +686,13 @@ void QgsWmsRenderContext::searchLayersToRenderStyle()
 
       for ( const auto layer : mNicknameLayers.values( nickname ) )
       {
+        if ( !mAcceptableLayersToRender.contains( layer ) )
+        {
+          continue;
+        }
         if ( !addLayerToRender( layer ) )
         {
-          throw QgsSecurityException( u"Your are not allowed to access the layer %1"_s.arg( layer->name() ) );
+          throw QgsSecurityException( u"You are not allowed to access the layer %1"_s.arg( layer->name() ) );
         }
       }
     }
@@ -632,6 +721,10 @@ void QgsWmsRenderContext::searchLayersToRenderStyle()
       {
         for ( const auto layer : mNicknameLayers.values( name ) )
         {
+          if ( !mAcceptableLayersToRender.contains( layer ) )
+          {
+            continue;
+          }
           if ( addLayerToRender( layer ) )
           {
             layerAdded = true;
@@ -901,6 +994,31 @@ void QgsWmsRenderContext::removeUnwantedLayers()
   }
 
   mLayersToRender = layers;
+}
+
+QHash<const QgsMapLayer *, QStringList> QgsWmsRenderContext::acceptableLayers( const QStringList &requestedLayerNames ) const
+{
+  QHash<const QgsMapLayer *, QStringList> acceptableLayersAndRequestNames;
+  collectAcceptableLayersAndRequestNames( acceptableLayersAndRequestNames, *mProject, requestedLayerNames );
+  bool projectIsRequested = ( requestedLayerNames.contains( QgsServerProjectUtils::wmsRootName( *mProject ) ) || requestedLayerNames.contains( mProject->title() ) );
+
+  if ( !projectIsRequested )
+  {
+    // Throw a LayerNotDefined when one of the requested layers or groups is not leading to a result
+    auto firstFoundInacceptableLayer = std::find_if( requestedLayerNames.cbegin(), requestedLayerNames.cend(), [&]( const QString &layerName ) {
+      //return when the requested layer has not been found as a acceptable layer
+      return !std::any_of( acceptableLayersAndRequestNames.cbegin(), acceptableLayersAndRequestNames.cend(), [&]( const QStringList &requestedNames ) {
+        return requestedNames.contains( layerName ) || mParameters.isExternalLayer( layerName );
+      } );
+    } );
+    if ( firstFoundInacceptableLayer != requestedLayerNames.cend() )
+    {
+      QgsWmsParameter param( QgsWmsParameter::LAYER );
+      param.mValue = *firstFoundInacceptableLayer;
+      throw QgsBadRequestException( QgsServiceException::OGC_LayerNotDefined, param );
+    }
+  }
+  return acceptableLayersAndRequestNames;
 }
 
 bool QgsWmsRenderContext::isExternalLayer( const QString &name ) const

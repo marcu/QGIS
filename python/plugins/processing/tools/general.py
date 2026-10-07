@@ -19,9 +19,13 @@ __author__ = "Victor Olaya"
 __date__ = "April 2013"
 __copyright__ = "(C) 2013, Victor Olaya"
 
+from typing import Optional
+
 from qgis.core import (
     QgsApplication,
     QgsProcessingAlgorithm,
+    QgsProcessingContext,
+    QgsProcessingFeedback,
     QgsProcessingOutputLayerDefinition,
     QgsProcessingParameterDefinition,
     QgsProcessingParameterEnum,
@@ -33,8 +37,7 @@ from qgis.core import (
 from qgis.utils import iface
 
 from processing.core.Processing import Processing
-from processing.gui.AlgorithmDialog import AlgorithmDialog
-from processing.gui.Postprocessing import handleAlgorithmResults
+from processing.gui.algorithm_widget import AlgorithmWidget
 
 
 # changing this signature? make sure you update the signature in
@@ -123,6 +126,17 @@ def run(
         )
 
 
+def _handle_algorithm_results(
+    alg: QgsProcessingAlgorithm,
+    context: QgsProcessingContext,
+    feedback: Optional[QgsProcessingFeedback] = None,
+    parameters: Optional[dict] = None,
+):
+    return QgsApplication.processingRegistry().handleAlgorithmResults(
+        alg, context, parameters or {}, feedback
+    )
+
+
 # changing this signature? make sure you update the signature in
 # python/processing/__init__.py too!
 # Docstring for this function is in python/processing/__init__.py
@@ -157,7 +171,7 @@ def runAndLoadResults(algOrName, parameters, feedback=None, context=None):
     return Processing.runAlgorithm(
         alg,
         parameters=parameters,
-        onFinish=handleAlgorithmResults,
+        onFinish=_handle_algorithm_results,
         feedback=feedback,
         context=context,
     )
@@ -175,36 +189,27 @@ def createAlgorithmDialog(algOrName, parameters={}):
     if alg is None:
         return None
 
-    dlg = alg.createCustomParametersWidget(iface.mainWindow())
+    widget = alg.createCustomParametersWidget(iface.mainWindow())
 
-    if not dlg:
-        dlg = AlgorithmDialog(alg, parent=iface.mainWindow())
+    if not widget:
+        widget = AlgorithmWidget(alg, parent=iface.mainWindow())
 
-    dlg.setParameters(parameters)
+    widget.setParameters(parameters)
 
-    return dlg
+    return widget
 
 
 # changing this signature? make sure you update the signature in
 # python/processing/__init__.py too!
 # Docstring for this function is in python/processing/__init__.py
 def execAlgorithmDialog(algOrName, parameters={}):
-    dlg = createAlgorithmDialog(algOrName, parameters)
-    if dlg is None:
+    widget = createAlgorithmDialog(algOrName, parameters)
+    if widget is None:
         return {}
 
-    canvas = iface.mapCanvas()
-    prevMapTool = canvas.mapTool()
-    dlg.show()
-    dlg.exec()
-    if canvas.mapTool() != prevMapTool:
-        try:
-            canvas.mapTool().reset()
-        except:
-            pass
-        canvas.setMapTool(prevMapTool)
+    widget.exec()
 
-    results = dlg.results()
+    results = widget.results()
     # make sure the dialog is destroyed and not only hidden on pressing Esc
-    dlg.close()
+    widget.close()
     return results

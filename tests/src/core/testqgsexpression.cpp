@@ -1188,6 +1188,24 @@ class TestQgsExpression : public QObject
       QTest::newRow( "scale_exponential(5,0,10,0,100,2)" ) << "scale_exponential(5,0,10,0,100,2)" << false << QVariant( 3.0303030303030303 );
       QTest::newRow( "scale_exponential(3,0,10,0,100,0.5)" ) << "scale_exponential(3,0,10,0,100,0.5)" << false << QVariant( 87.58553274682306 );
 
+      QTest::newRow( "scale_cubic_bezier(5, 0, 10, 0, 100, 0, 0, 1, 1)" ) << "scale_cubic_bezier(5, 0, 10, 0, 100, 0, 0, 1, 1)" << false << QVariant( 50.0 );
+      QTest::newRow( "scale_cubic_bezier(0, 0, 10, 0, 100, 0, 0, 1, 1)" ) << "scale_cubic_bezier(0, 0, 10, 0, 100, 0, 0, 1, 1)" << false << QVariant( 0.0 );
+      QTest::newRow( "scale_cubic_bezier(10, 0, 10, 0, 100, 0, 0, 1, 1)" ) << "scale_cubic_bezier(10, 0, 10, 0, 100, 0, 0, 1, 1)" << false << QVariant( 100.0 );
+      QTest::newRow( "scale_cubic_bezier(-1, 0, 10, 0, 100, 0, 0, 1, 1)" ) << "scale_cubic_bezier(-1, 0, 10, 0, 100, 0, 0, 1, 1)" << false << QVariant( 0.0 );
+      QTest::newRow( "scale_cubic_bezier(11, 0, 10, 0, 100, 0, 0, 1, 1)" ) << "scale_cubic_bezier(11, 0, 10, 0, 100, 0, 0, 1, 1)" << false << QVariant( 100.0 );
+      QTest::newRow( "scale_cubic_bezier(15, 10, 20, 100, 200, 0, 0, 1, 1)" ) << "scale_cubic_bezier(15, 10, 20, 100, 200, 0, 0, 1, 1)" << false << QVariant( 150.0 );
+      QTest::newRow( "scale_cubic_bezier(5, 0, 10, 0, 100, 0.25, 0.1, 0.25, 1.0)" ) << "round(scale_cubic_bezier(5, 0, 10, 0, 100, 0.25, 0.1, 0.25, 1.0),5)" << false << QVariant( 80.24034 );
+      QTest::newRow( "scale_cubic_bezier(5, 0, 10, 0, 100, 0.42, 0.0, 0.58, 1.0)" ) << "round(scale_cubic_bezier(5, 0, 10, 0, 100, 0.42, 0.0, 0.58, 1.0),5)" << false << QVariant( 50.0 );
+      QTest::newRow( "scale_cubic_bezier(5, 0, 10, 0, 100, 1.0, 0.0, 0.0, 1.0)" ) << "round(scale_cubic_bezier(5, 0, 10, 0, 100, 1.0, 0.0, 0.0, 1.0),5)" << false << QVariant( 50.0 );
+      QTest::newRow( "scale_cubic_bezier(-5, 0, 10, 0, 100, 0.42, 0.0, 0.58, 1.0)" ) << "scale_cubic_bezier(-5, 0, 10, 0, 100, 0.42, 0.0, 0.58, 1.0)" << false << QVariant( 0.0 );
+      QTest::newRow( "scale_cubic_bezier(0, 0, 10, 0, 100, 0.42, 0.0, 0.58, 1.0)" ) << "scale_cubic_bezier(0, 0, 10, 0, 100, 0.42, 0.0, 0.58, 1.0)" << false << QVariant( 0.0 );
+      QTest::newRow( "scale_cubic_bezier(10, 0, 10, 0, 100, 0.42, 0.0, 0.58, 1.0)" ) << "scale_cubic_bezier(10, 0, 10, 0, 100, 0.42, 0.0, 0.58, 1.0)" << false << QVariant( 100.0 );
+      QTest::newRow( "scale_cubic_bezier(15, 0, 10, 0, 100, 0.42, 0.0, 0.58, 1.0)" ) << "scale_cubic_bezier(15, 0, 10, 0, 100, 0.42, 0.0, 0.58, 1.0)" << false << QVariant( 100.0 );
+      QTest::newRow( "invalid scale_cubic_bezier(5, 10, 0, 0, 100, 0, 0, 1, 1)" ) << "scale_cubic_bezier(5, 10, 0, 0, 100, 0, 0, 1, 1)" << true << QVariant();
+      QTest::newRow( "invalid scale_cubic_bezier(5, 0, 10, 0, 100, 1.5, 0, 1, 1)" ) << "scale_cubic_bezier(5, 0, 10, 0, 100, 1.5, 0, 1, 1)" << true << QVariant();
+      QTest::newRow( "invalid scale_cubic_bezier(5, 0, 10, 0, 100, -0.5, 0, 1, 1)" ) << "scale_cubic_bezier(5, 0, 10, 0, 100, -0.5, 0, 1, 1)" << true << QVariant();
+      QTest::newRow( "invalid scale_cubic_bezier(5, 0, 10, 0, 100, 0, 0, 1, 2.0)" ) << "scale_cubic_bezier(5, 0, 10, 0, 100, 0, 0, 1, 2.0)" << true << QVariant();
+
       // cast functions
       QTest::newRow( "double to int" ) << "toint(3.2)" << false << QVariant( 3 );
       QTest::newRow( "text to int" ) << "toint('53')" << false << QVariant( 53 );
@@ -1457,16 +1475,32 @@ class TestQgsExpression : public QObject
       QTest::newRow( "shared_paths null 2" ) << "shared_paths(geom_from_wkt('LineString(0 0, 10 10)'), NULL)" << false << QVariant();
       QTest::newRow( "shared_paths point 1" ) << "shared_paths(make_point(1,2), geom_from_wkt('LineString(0 0, 10 10)'))" << false << QVariant();
       QTest::newRow( "shared_paths point 2" ) << "shared_paths(geom_from_wkt('LineString(0 0, 10 10)'), make_point(1,2))" << false << QVariant();
+#if GEOS_VERSION_MAJOR > 3 || ( GEOS_VERSION_MAJOR == 3 && GEOS_VERSION_MINOR >= 15 )
+      QTest::newRow( "shared_paths lines 1" )
+        << "geom_to_wkt(shared_paths(geometry1:=geom_from_wkt('MULTILINESTRING((26 125,26 200,126 200,126 125,26 125),(51 150,101 150,76 175,51 150))'), geometry2:=geom_from_wkt('LINESTRING(151 "
+           "100,126 156.25,126 125,90 161, 76 175)')))"
+        << false
+        << QVariant( "GeometryCollection (MultiLineString ((126 156.25, 126 125),(101 150, 90 161, 76 175)),MultiLineString EMPTY)" );
+#else
       QTest::newRow( "shared_paths lines 1" )
         << "geom_to_wkt(shared_paths(geometry1:=geom_from_wkt('MULTILINESTRING((26 125,26 200,126 200,126 125,26 125),(51 150,101 150,76 175,51 150))'), geometry2:=geom_from_wkt('LINESTRING(151 "
            "100,126 156.25,126 125,90 161, 76 175)')))"
         << false
         << QVariant( "GeometryCollection (MultiLineString ((126 156.25, 126 125),(101 150, 90 161),(90 161, 76 175)),MultiLineString EMPTY)" );
+#endif
+#if GEOS_VERSION_MAJOR > 3 || ( GEOS_VERSION_MAJOR == 3 && GEOS_VERSION_MINOR >= 15 )
+      QTest::newRow( "shared_paths lines 2" )
+        << "geom_to_wkt(shared_paths(geometry1:=geom_from_wkt('MULTILINESTRING((26 125,26 200,126 200,126 125,26 125),(51 150,101 150,76 175,51 150))'), "
+           "geometry2:=reverse(geom_from_wkt('LINESTRING(151 100,126 156.25,126 125,90 161, 76 175)'))))"
+        << false
+        << QVariant( "GeometryCollection (MultiLineString EMPTY,MultiLineString ((126 156.25, 126 125),(101 150, 90 161, 76 175)))" );
+#else
       QTest::newRow( "shared_paths lines 2" )
         << "geom_to_wkt(shared_paths(geometry1:=geom_from_wkt('MULTILINESTRING((26 125,26 200,126 200,126 125,26 125),(51 150,101 150,76 175,51 150))'), "
            "geometry2:=reverse(geom_from_wkt('LINESTRING(151 100,126 156.25,126 125,90 161, 76 175)'))))"
         << false
         << QVariant( "GeometryCollection (MultiLineString EMPTY,MultiLineString ((126 156.25, 126 125),(101 150, 90 161),(90 161, 76 175)))" );
+#endif
       QTest::newRow( "offset_curve not geom" ) << "offset_curve('g', 5)" << true << QVariant();
       QTest::newRow( "offset_curve null" ) << "offset_curve(NULL, 5)" << false << QVariant();
       QTest::newRow( "offset_curve point" ) << "offset_curve(geom_from_wkt('POINT(1 2)'),5)" << false << QVariant();
@@ -1486,28 +1520,55 @@ class TestQgsExpression : public QObject
       QTest::newRow( "tapered_buffer not geom" ) << "tapered_buffer('g', 1, 2, 8)" << true << QVariant();
       QTest::newRow( "tapered_buffer null" ) << "tapered_buffer(NULL, 1, 2, 8)" << false << QVariant();
       QTest::newRow( "tapered_buffer point" ) << "geom_to_wkt(tapered_buffer(geometry:=geom_from_wkt('POINT(1 2)'),start_width:=1,end_width:=2,segments:=10))" << true << QVariant();
+#if GEOS_VERSION_MAJOR > 3 || ( GEOS_VERSION_MAJOR == 3 && GEOS_VERSION_MINOR >= 15 )
+      QTest::newRow( "tapered_buffer line" )
+        << "geom_to_wkt(tapered_buffer(geometry:=geom_from_wkt('LineString(0 0, 10 0)'),start_width:=1,end_width:=2,segments:=3))"
+        << false
+        << QVariant(
+             u"MultiPolygon (((0 -0.5, -0.25 -0.4330127, -0.4330127 -0.25, -0.5 0, -0.4330127 0.25, -0.25 0.4330127, 0 0.5, 10 1, 10.5 0.8660254, 10.8660254 0.5, 11 0, 10.8660254 -0.5, 10.5 -0.8660254, 10 -1, 0 -0.5)))"_s
+           );
+#else
       QTest::newRow( "tapered_buffer line" )
         << "geom_to_wkt(tapered_buffer(geometry:=geom_from_wkt('LineString(0 0, 10 0)'),start_width:=1,end_width:=2,segments:=3))"
         << false
         << QVariant(
              u"MultiPolygon (((-0.25 -0.4330127, -0.4330127 -0.25, -0.5 0, -0.4330127 0.25, -0.25 0.4330127, 0 0.5, 10 1, 10.5 0.8660254, 10.8660254 0.5, 11 0, 10.8660254 -0.5, 10.5 -0.8660254, 10 -1, 0 -0.5, -0.25 -0.4330127)))"_s
            );
+#endif
+#if GEOS_VERSION_MAJOR > 3 || ( GEOS_VERSION_MAJOR == 3 && GEOS_VERSION_MINOR >= 15 )
+      QTest::newRow( "tapered_buffer line 2" )
+        << "geom_to_wkt(tapered_buffer(geometry:=geom_from_wkt('LineString(0 0, 10 0)'),start_width:=2,end_width:=1,segments:=3))"
+        << false
+        << QVariant(
+             u"MultiPolygon (((0 -1, -0.5 -0.8660254, -0.8660254 -0.5, -1 0, -0.8660254 0.5, -0.5 0.8660254, 0 1, 10 0.5, 10.25 0.4330127, 10.4330127 0.25, 10.5 0, 10.4330127 -0.25, 10.25 -0.4330127, 10 -0.5, 0 -1)))"_s
+           );
+#else
       QTest::newRow( "tapered_buffer line 2" )
         << "geom_to_wkt(tapered_buffer(geometry:=geom_from_wkt('LineString(0 0, 10 0)'),start_width:=2,end_width:=1,segments:=3))"
         << false
         << QVariant(
              u"MultiPolygon (((-0.5 -0.8660254, -0.8660254 -0.5, -1 0, -0.8660254 0.5, -0.5 0.8660254, 0 1, 10 0.5, 10.25 0.4330127, 10.4330127 0.25, 10.5 0, 10.4330127 -0.25, 10.25 -0.4330127, 10 -0.5, 0 -1, -0.5 -0.8660254)))"_s
            );
+#endif
       QTest::newRow( "buffer_by_m not geom" ) << "buffer_by_m('g', 8)" << true << QVariant();
       QTest::newRow( "buffer_by_m null" ) << "buffer_by_m(NULL, 8)" << false << QVariant();
       QTest::newRow( "buffer_by_m point" ) << "geom_to_wkt(buffer_by_m(geometry:=geom_from_wkt('POINT(1 2)'),segments:=10))" << true << QVariant();
       QTest::newRow( "buffer_by_m line" ) << "geom_to_wkt(buffer_by_m(geometry:=geom_from_wkt('LineString(0 0, 10 0)'),segments:=3))" << false << QVariant( u"GeometryCollection EMPTY"_s );
+#if GEOS_VERSION_MAJOR > 3 || ( GEOS_VERSION_MAJOR == 3 && GEOS_VERSION_MINOR >= 15 )
+      QTest::newRow( "buffer_by_m linem" )
+        << "geom_to_wkt(buffer_by_m(geometry:=geom_from_wkt('LineStringM(0 0 1, 10 0 2)'),segments:=3))"
+        << false
+        << QVariant(
+             u"MultiPolygon (((0 -0.5, -0.25 -0.4330127, -0.4330127 -0.25, -0.5 0, -0.4330127 0.25, -0.25 0.4330127, 0 0.5, 10 1, 10.5 0.8660254, 10.8660254 0.5, 11 0, 10.8660254 -0.5, 10.5 -0.8660254, 10 -1, 0 -0.5)))"_s
+           );
+#else
       QTest::newRow( "buffer_by_m linem" )
         << "geom_to_wkt(buffer_by_m(geometry:=geom_from_wkt('LineStringM(0 0 1, 10 0 2)'),segments:=3))"
         << false
         << QVariant(
              u"MultiPolygon (((-0.25 -0.4330127, -0.4330127 -0.25, -0.5 0, -0.4330127 0.25, -0.25 0.4330127, 0 0.5, 10 1, 10.5 0.8660254, 10.8660254 0.5, 11 0, 10.8660254 -0.5, 10.5 -0.8660254, 10 -1, 0 -0.5, -0.25 -0.4330127)))"_s
            );
+#endif
       QTest::newRow( "single_sided_buffer not geom" ) << "single_sided_buffer('g', 5)" << true << QVariant();
       QTest::newRow( "single_sided_buffer null" ) << "single_sided_buffer(NULL, 5)" << false << QVariant();
       QTest::newRow( "single_sided_buffer point" ) << "single_sided_buffer(geom_from_wkt('POINT(1 2)'),5)" << false << QVariant();
@@ -1524,6 +1585,10 @@ class TestQgsExpression : public QObject
       QTest::newRow( "extend null" ) << "extend(NULL, 1, 2)" << false << QVariant();
       QTest::newRow( "extend point" ) << "extend(geom_from_wkt('POINT(1 2)'),1,2)" << false << QVariant();
       QTest::newRow( "extend line" ) << "geom_to_wkt(extend(geom_from_wkt('LineString(0 0, 1 0, 1 1)'),1,2))" << false << QVariant( "LineString (-1 0, 1 0, 1 3)" );
+      QTest::newRow( "extend line with deflection" )
+        << "geom_to_wkt(extend(geom_from_wkt('LineString(0 0, 1 0, 1 1)'),1,2, 45, -45), 3)"
+        << false
+        << QVariant( "LineString (-0.707 0.707, 0 0, 1 0, 1 1, -0.414 2.414)" );
       QTest::newRow( "start_point point" ) << "geom_to_wkt(start_point(geom_from_wkt('POINT(2 0)')))" << false << QVariant( "Point (2 0)" );
       QTest::newRow( "start_point multipoint" ) << "geom_to_wkt(start_point(geom_from_wkt('MULTIPOINT((3 3), (1 1), (2 2))')))" << false << QVariant( "Point (3 3)" );
       QTest::newRow( "start_point line" ) << "geom_to_wkt(start_point(geom_from_wkt('LINESTRING(4 1, 1 1, 2 2)')))" << false << QVariant( "Point (4 1)" );
@@ -1727,6 +1792,7 @@ class TestQgsExpression : public QObject
       QTest::newRow( "relate pattern true" ) << "relate( geom_from_wkt( 'LINESTRING(40 40,120 120)' ), geom_from_wkt( 'LINESTRING(40 40,60 120)' ), '**1F001**' )" << false << QVariant( true );
       QTest::newRow( "relate pattern false" ) << "relate( geom_from_wkt( 'LINESTRING(40 40,120 120)' ), geom_from_wkt( 'LINESTRING(40 40,60 120)' ), '**1F002**' )" << false << QVariant( false );
       QTest::newRow( "azimuth" ) << "toint(degrees(azimuth( point_a := make_point(25, 45), point_b := make_point(75, 100)))*1000000)" << false << QVariant( 42273689 );
+      QTest::newRow( "azimuth" ) << "toint(degrees(azimuth( point1 := make_point(25, 45), point2 := make_point(75, 100)))*1000000)" << false << QVariant( 42273689 );
       QTest::newRow( "azimuth" ) << "toint(degrees( azimuth( make_point(75, 100), make_point(25,45) ) )*1000000)" << false << QVariant( 222273689 );
       QTest::newRow( "bearing 1" ) << "to_int(bearing( make_point(16198544, -4534850), make_point(18736872, -1877769), 'EPSG:3857', 'EPSG:7030')*1000000)" << false << QVariant( 872317 );
       QTest::newRow( "bearing 1 with CRS" ) << "to_int(bearing( make_point(16198544, -4534850), make_point(18736872, -1877769), crs_from_text('EPSG:3857'), 'EPSG:7030')*1000000)" << false << QVariant( 872317 );
@@ -2126,7 +2192,19 @@ class TestQgsExpression : public QObject
         << false
         << QVariant( "Polygon ((2.3 6, 2.4 8.2, 2.6 8.5, 5.2 9.8, 6.4 9.7, 7.2 9.5, 7.6 8.8, 8.5 7.1, 9.1 5, 9 3, 8.4 1.9, 7.8 1.6, 7.3 1.6, 6.5 1.6, 4.3 1.9, 3 2.2, 2.3 3.6, 2.3 6))" );
 #endif
-#if GEOS_VERSION_MAJOR > 3 || ( GEOS_VERSION_MAJOR == 3 && GEOS_VERSION_MINOR >= 12 )
+#if GEOS_VERSION_MAJOR > 3 || ( GEOS_VERSION_MAJOR == 3 && GEOS_VERSION_MINOR >= 15 )
+      QTest::newRow( "concave_hull multipoint allow holes" )
+        << "geom_to_wkt(concave_hull(geom_from_wkt('MultiPoint ((6.3 8.4),(7.6 8.8),(6.8 7.3),(5.3 1.8),(9.1 5),(8.1 7),(8.8 2.9),(2.4 8.2),(3.2 5.1),(3.7 2.3),(2.7 5.4),(8.4 1.9),(7.5 8.7),(4.4 "
+           "4.2),(7.7 6.7),(9 3),(3.6 6.1),(3.2 6.5),(8.1 4.7),(8.8 5.8),(6.8 7.3),(4.9 9.5),(8.1 6),(8.7 5),(7.8 1.6),(7.9 2.1),(3 2.2),(7.8 4.3),(2.6 8.5),(4.8 3.4),(3.5 3.5),(3.6 4),(3.1 "
+           "7.9),(8.3 2.9),(2.7 8.4),(5.2 9.8),(7.2 9.5),(8.5 7.1),(7.5 8.4),(7.5 7.7),(8.1 2.9),(7.7 7.3),(4.1 4.2),(8.3 7.2),(2.3 3.6),(8.9 5.3),(2.7 5.7),(5.7 9.7),(2.7 7.7),(3.9 8.8),(6 8.1),(8 "
+           "7.2),(5.4 3.2),(5.5 2.6),(6.2 2.2),(7 2),(7.6 2.7),(8.4 3.5),(8.7 4.2),(8.2 5.4),(8.3 6.4),(6.9 8.6),(6 9),(5 8.6),(4.3 8),(3.6 7.3),(3.6 6.8),(4 7.5),(2.4 6.7),(2.3 6),(2.6 4.4),(2.8 "
+           "3.3),(4 3.2),(4.3 1.9),(6.5 1.6),(7.3 1.6),(3.8 4.6),(3.1 5.9),(3.4 8.6),(4.5 9),(6.4 9.7))'), 0.99, true),2)"
+        << false
+        << QVariant(
+             "Polygon ((2.4 8.2, 2.6 8.5, 5.2 9.8, 6.4 9.7, 7.2 9.5, 7.6 8.8, 8.5 7.1, 9.1 5, 9 3, 8.4 1.9, 7.8 1.6, 7.3 1.6, 6.5 1.6, 4.3 1.9, 3 2.2, 2.3 3.6, 2.3 6, 2.4 8.2),(6.8 7.3, 3.6 6.1, 4.4 "
+             "4.2, 7.8 4.3, 6.8 7.3))"
+           );
+#elif GEOS_VERSION_MAJOR > 3 || ( GEOS_VERSION_MAJOR == 3 && GEOS_VERSION_MINOR >= 12 )
       QTest::newRow( "concave_hull multipoint allow holes" )
         << "geom_to_wkt(concave_hull(geom_from_wkt('MultiPoint ((6.3 8.4),(7.6 8.8),(6.8 7.3),(5.3 1.8),(9.1 5),(8.1 7),(8.8 2.9),(2.4 8.2),(3.2 5.1),(3.7 2.3),(2.7 5.4),(8.4 1.9),(7.5 8.7),(4.4 "
            "4.2),(7.7 6.7),(9 3),(3.6 6.1),(3.2 6.5),(8.1 4.7),(8.8 5.8),(6.8 7.3),(4.9 9.5),(8.1 6),(8.7 5),(7.8 1.6),(7.9 2.1),(3 2.2),(7.8 4.3),(2.6 8.5),(4.8 3.4),(3.5 3.5),(3.6 4),(3.1 "
@@ -2238,8 +2316,12 @@ class TestQgsExpression : public QObject
       QTest::newRow( "right" ) << "right('Hello World', 5)" << false << QVariant( "World" );
       QTest::newRow( "rpad" ) << "rpad('Hello', 10, 'x')" << false << QVariant( "Helloxxxxx" );
       QTest::newRow( "rpad truncate" ) << "rpad('Hello', 4, 'x')" << false << QVariant( "Hell" );
+      QTest::newRow( "rpad no fill parameter" ) << "rpad('Hello', 10)" << false << QVariant( "Hello     " );
+      QTest::newRow( "rpad empty fill character" ) << "rpad('Hello', 10, '')" << false << QVariant( "Hello     " );
       QTest::newRow( "lpad" ) << "lpad('Hello', 10, 'x')" << false << QVariant( "xxxxxHello" );
       QTest::newRow( "lpad truncate" ) << "lpad('Hello', 4, 'x')" << false << QVariant( "Hell" );
+      QTest::newRow( "lpad no fill parameter" ) << "lpad('Hello', 10)" << false << QVariant( "     Hello" );
+      QTest::newRow( "lpad empty fill character" ) << "lpad('Hello', 10, '')" << false << QVariant( "     Hello" );
       QTest::newRow( "title" ) << "title(' HeLlO   WORLD ')" << false << QVariant( " Hello   World " );
       QTest::newRow( "trim" ) << "trim('   Test String ')" << false << QVariant( "Test String" );
       QTest::newRow( "trim empty string" ) << "trim('')" << false << QVariant( "" );
@@ -2273,6 +2355,8 @@ class TestQgsExpression : public QObject
       QTest::newRow( "concat" ) << "concat('a', 'b', 'c', 'd')" << false << QVariant( "abcd" );
       QTest::newRow( "concat function single" ) << "concat('a')" << false << QVariant( "a" );
       QTest::newRow( "concat function with NULL" ) << "concat(NULL,'a','b')" << false << QVariant( "ab" );
+      QTest::newRow( "concat function with only NULL" ) << "concat(NULL)" << false << QVariant( "" );
+      QTest::newRow( "concat function with multi NULL" ) << "concat(NULL, NULL)" << false << QVariant( "" );
       QTest::newRow( "concat_ws no args" ) << "concat_ws()" << true << QVariant();
       QTest::newRow( "concat_ws one arg" ) << "concat_ws(' ')" << true << QVariant();
       QTest::newRow( "concat_ws comma" ) << "concat_ws(',', 'b', NULL, 'd')" << false << QVariant( "b,d" );
@@ -2548,6 +2632,130 @@ class TestQgsExpression : public QObject
       QTest::newRow( "color hsv float" ) << "color_hsvf(1,0.9012,0)" << false << QVariant( QColor::fromHsvF( 1., 0.9012, 0 ) );
       QTest::newRow( "color hsva float" ) << "color_hsvf(0.5,0.9012,0,0.8034)" << false << QVariant( QColor::fromHsvF( 0.5f, 0.9012, 0, 0.8034 ) );
       QTest::newRow( "color hsv invalid float" ) << "color_hsvf(1.5,0.1,0,0)" << false << QVariant( QColor::fromHsvF( 1, 0.1, 0, 0 ) );
+
+      // RGB color addition
+      QTest::newRow( "color add float" ) << "color_rgbf(0.4,0.6,0.8) + 0.1" << false << QVariant( QColor::fromRgbF( 0.5, 0.7, 0.9, 1.0 ) );
+      QTest::newRow( "color add overflow" ) << "color_rgbf(0.8,0.8,0.8) + 1" << false << QVariant( QColor::fromRgbF( 1.0, 1.0, 1.0, 1.0 ) );
+
+      // RGB color subtraction
+      QTest::newRow( "color subtract float" ) << "color_rgbf(0.4,0.6,0.8) - 0.1" << false << QVariant( QColor::fromRgbF( 0.3, 0.5, 0.7, 1.0 ) );
+      QTest::newRow( "color subtract underflow" ) << "color_rgbf(0.2,0.2,0.2) - 1" << false << QVariant( QColor::fromRgbF( 0.0, 0.0, 0.0, 1.0 ) );
+
+      // RGB color multiplication
+      QTest::newRow( "color multiply int" ) << "color_rgbf(0.4,0.6,0.8,0.4) * 2" << false << QVariant( QColor::fromRgbF( 0.8, 1.0, 1.0, 0.4 ) );
+      QTest::newRow( "color multiply float" ) << "color_rgbf(0.4,0.6,0.8) * 0.5" << false << QVariant( QColor::fromRgbF( 0.2, 0.3, 0.4, 1.0 ) );
+      QTest::newRow( "color multiply zero" ) << "color_rgbf(0.4,0.6,0.8) * 0" << false << QVariant( QColor::fromRgbF( 0.0, 0.0, 0.0, 1.0 ) );
+      QTest::newRow( "color multiply negative" ) << "color_rgbf(0.4,0.6,0.8) * -1" << false << QVariant( QColor::fromRgbF( 0.0, 0.0, 0.0, 1.0 ) );
+
+      // RGB color division
+      QTest::newRow( "color divide int" ) << "color_rgbf(0.4,0.6,0.8,0.4) / 2" << false << QVariant( QColor::fromRgbF( 0.2, 0.3, 0.4, 0.4 ) );
+      QTest::newRow( "color divide float" ) << "color_rgbf(0.4,0.6,0.8) / 0.5" << false << QVariant( QColor::fromRgbF( 0.8, 1.0, 1.0, 1.0 ) );
+      QTest::newRow( "color divide zero" ) << "color_rgbf(0.4,0.6,0.8) / 0" << false << QVariant();
+
+      // CMYK color addition
+      QTest::newRow( "cmyk color add float" ) << "color_cmykf(0.4,0.6,0.8,0.2) + 0.1" << false << QVariant( QColor::fromCmykF( 0.5, 0.7, 0.9, 0.3, 1.0 ) );
+      QTest::newRow( "cmyk color add overflow" ) << "color_cmykf(0.8,0.8,0.8,0.8) + 1" << false << QVariant( QColor::fromCmykF( 1.0, 1.0, 1.0, 1.0, 1.0 ) );
+
+      // CMYK color subtraction
+      QTest::newRow( "cmyk color subtract float" ) << "color_cmykf(0.4,0.6,0.8,0.2) - 0.1" << false << QVariant( QColor::fromCmykF( 0.3, 0.5, 0.7, 0.1, 1.0 ) );
+      QTest::newRow( "cmyk color subtract underflow" ) << "color_cmykf(0.2,0.2,0.2,0.2) - 1" << false << QVariant( QColor::fromCmykF( 0.0, 0.0, 0.0, 0.0, 1.0 ) );
+
+      // CMYK color multiplication
+      QTest::newRow( "cmyk color multiply int" ) << "color_cmykf(0.4,0.6,0.8,0.2,0.4) * 2" << false << QVariant( QColor::fromCmykF( 0.8, 1.0, 1.0, 0.4, 0.4 ) );
+      QTest::newRow( "cmyk color multiply float" ) << "color_cmykf(0.4,0.6,0.8,0.2) * 0.5" << false << QVariant( QColor::fromCmykF( 0.2, 0.3, 0.4, 0.1, 1.0 ) );
+      QTest::newRow( "cmyk color multiply zero" ) << "color_cmykf(0.4,0.6,0.8,0.2) * 0" << false << QVariant( QColor::fromCmykF( 0.0, 0.0, 0.0, 0.0, 1.0 ) );
+      QTest::newRow( "cmyk color multiply negative" ) << "color_cmykf(0.4,0.6,0.8,0.2) * -1" << false << QVariant( QColor::fromCmykF( 0.0, 0.0, 0.0, 0.0, 1.0 ) );
+
+      // CMYK color division
+      QTest::newRow( "cmyk color divide int" ) << "color_cmykf(0.4,0.6,0.8,0.2,0.4) / 2" << false << QVariant( QColor::fromCmykF( 0.2, 0.3, 0.4, 0.1, 0.4 ) );
+      QTest::newRow( "cmyk color divide float" ) << "color_cmykf(0.4,0.6,0.8,0.2) / 0.5" << false << QVariant( QColor::fromCmykF( 0.8, 1.0, 1.0, 0.4, 1.0 ) );
+      QTest::newRow( "cmyk color divide zero" ) << "color_cmykf(0.4,0.6,0.8,0.2) / 0" << false << QVariant();
+
+      // HSL color addition
+      QTest::newRow( "hsl color add" ) << "color_hslf(0,0,0.5) + 0.2" << false << QVariant( QColor::fromRgbF( 0.7f, 0.7f, 0.7f, 1.0f ) );
+      QTest::newRow( "hsl color add 2" ) << "color_hslf(0.75,0.5,0.5) + 0.3" << false << QVariant( QColor::fromRgbF( 0.8f, 0.55f, 1.0f, 1.0f ) );
+      QTest::newRow( "hsl color add overflow" ) << "color_hslf(0,0,0.8) + 0.5" << false << QVariant( QColor::fromRgbF( 1.0f, 1.0f, 1.0f, 1.0f ) );
+
+      // HSL color subtraction
+      QTest::newRow( "hsl color subtract" ) << "color_hslf(0,0,0.5) - 0.2" << false << QVariant( QColor::fromRgbF( 0.3f, 0.3f, 0.3f, 1.0f ) );
+      QTest::newRow( "hsl color subtract 2" ) << "color_hslf(0.75,0.5,0.5) - 0.3" << false << QVariant( QColor::fromRgbF( 0.2f, 0.0f, 0.45f, 1.0f ) );
+      QTest::newRow( "hsl color subtract underflow" ) << "color_hslf(0,0,0.2) - 0.5" << false << QVariant( QColor::fromRgbF( 0.0f, 0.0f, 0.0f, 1.0f ) );
+
+      // HSL color multiplication
+      QTest::newRow( "hsl color multiply" ) << "color_hslf(0,0,0.5) * 0.5" << false << QVariant( QColor::fromRgbF( 0.25f, 0.25f, 0.25f, 1.0f ) );
+      QTest::newRow( "hsl color multiply overflow" ) << "color_hslf(0,0,0.5) * 3" << false << QVariant( QColor::fromRgbF( 1.0f, 1.0f, 1.0f, 1.0f ) );
+
+      // HSL color division
+      QTest::newRow( "hsl color divide" ) << "color_hslf(0,0,0.8) / 2" << false << QVariant( QColor::fromRgbF( 0.4f, 0.4f, 0.4f, 1.0f ) );
+      QTest::newRow( "hsl color divide zero" ) << "color_hslf(0,0,0.5) / 0" << false << QVariant();
+
+      // HSV color addition
+      QTest::newRow( "hsv color add" ) << "color_hsvf(0,0,0.5) + 0.2" << false << QVariant( QColor::fromRgbF( 0.7f, 0.7f, 0.7f, 1.0f ) );
+      QTest::newRow( "hsv color add overflow" ) << "color_hsvf(0,0,0.8) + 0.5" << false << QVariant( QColor::fromRgbF( 1.0f, 1.0f, 1.0f, 1.0f ) );
+
+      // HSV color subtraction
+      QTest::newRow( "hsv color subtract" ) << "color_hsvf(0,0,0.5) - 0.2" << false << QVariant( QColor::fromRgbF( 0.3f, 0.3f, 0.3f, 1.0f ) );
+      QTest::newRow( "hsv color subtract underflow" ) << "color_hsvf(0,0,0.2) - 0.5" << false << QVariant( QColor::fromRgbF( 0.0f, 0.0f, 0.0f, 1.0f ) );
+
+      // HSV color multiplication
+      QTest::newRow( "hsv color multiply" ) << "color_hsvf(0,0,0.5) * 0.5" << false << QVariant( QColor::fromRgbF( 0.25f, 0.25f, 0.25f, 1.0f ) );
+      QTest::newRow( "hsv color multiply overflow" ) << "color_hsvf(0,0,0.5) * 3" << false << QVariant( QColor::fromRgbF( 1.0f, 1.0f, 1.0f, 1.0f ) );
+
+      // HSV color division
+      QTest::newRow( "hsv color divide" ) << "color_hsvf(0,0,0.8) / 2" << false << QVariant( QColor::fromRgbF( 0.4f, 0.4f, 0.4f, 1.0f ) );
+      QTest::newRow( "hsv color divide zero" ) << "color_hsvf(0,0,0.5) / 0" << false << QVariant();
+
+      // float + color
+      QTest::newRow( "float plus rgb color" ) << "0.1 + color_rgbf(0.4,0.6,0.8)" << false << QVariant( QColor::fromRgbF( 0.5, 0.7, 0.9, 1.0 ) );
+      QTest::newRow( "float plus rgb color overflow" ) << "1 + color_rgbf(0.8,0.8,0.8)" << false << QVariant( QColor::fromRgbF( 1.0, 1.0, 1.0, 1.0 ) );
+      QTest::newRow( "float plus cmyk color" ) << "0.1 + color_cmykf(0.4,0.6,0.8,0.2)" << false << QVariant( QColor::fromCmykF( 0.5, 0.7, 0.9, 0.3, 1.0 ) );
+      QTest::newRow( "float plus hsl color" ) << "0.2 + color_hslf(0,0,0.5)" << false << QVariant( QColor::fromRgbF( 0.7f, 0.7f, 0.7f, 1.0f ) );
+      QTest::newRow( "float plus hsv color" ) << "0.2 + color_hsvf(0,0,0.5)" << false << QVariant( QColor::fromRgbF( 0.7f, 0.7f, 0.7f, 1.0f ) );
+
+      // float - color
+      QTest::newRow( "float minus rgb color" ) << "1.0 - color_rgbf(0.4,0.6,0.8)" << false << QVariant( QColor::fromRgbF( 0.6, 0.4, 0.2, 1.0 ) );
+      QTest::newRow( "float minus rgb color underflow" ) << "0.5 - color_rgbf(0.4,0.6,0.8)" << false << QVariant( QColor::fromRgbF( 0.1, 0.0, 0.0, 1.0 ) );
+      QTest::newRow( "float minus cmyk color" ) << "1.0 - color_cmykf(0.4,0.6,0.8,0.2)" << false << QVariant( QColor::fromCmykF( 0.6, 0.4, 0.2, 0.8, 1.0 ) );
+      QTest::newRow( "float minus cmyk color underflow" ) << "0.5 - color_cmykf(0.4,0.6,0.8,0.2)" << false << QVariant( QColor::fromCmykF( 0.1, 0.0, 0.0, 0.3, 1.0 ) );
+      QTest::newRow( "float minus hsl color" ) << "0.8 - color_hslf(0,0,0.5)" << false << QVariant( QColor::fromRgbF( 0.3f, 0.3f, 0.3f, 1.0f ) );
+      QTest::newRow( "float minus hsv color" ) << "0.8 - color_hsvf(0,0,0.5)" << false << QVariant( QColor::fromRgbF( 0.3f, 0.3f, 0.3f, 1.0f ) );
+
+      // float divided by color
+      QTest::newRow( "float divide color error" ) << "1.0 / color_rgbf(0.4,0.6,0.8)" << true << QVariant();
+
+      // RGB color + RGB color
+      QTest::newRow( "rgb color add color" ) << "color_rgbf(0.4,0.6,0.8) + color_rgbf(0.1,0.2,0.1)" << false << QVariant( QColor::fromRgbF( 0.5, 0.8, 0.9, 1.0 ) );
+      QTest::newRow( "rgb color add color overflow" ) << "color_rgbf(0.8,0.8,0.8) + color_rgbf(0.5,0.5,0.5)" << false << QVariant( QColor::fromRgbF( 1.0, 1.0, 1.0, 1.0 ) );
+      QTest::newRow( "rgb color add color alpha" ) << "color_rgbf(0.4,0.6,0.8,0.5) + color_rgbf(0.1,0.2,0.1,0.9)" << false << QVariant( QColor::fromRgbF( 0.5, 0.8, 0.9, 0.5 ) );
+      QTest::newRow( "rgb color subtract color" ) << "color_rgbf(0.4,0.6,0.8) - color_rgbf(0.1,0.1,0.3)" << false << QVariant( QColor::fromRgbF( 0.3, 0.5, 0.5, 1.0 ) );
+      QTest::newRow( "rgb color subtract color underflow" ) << "color_rgbf(0.1,0.1,0.1) - color_rgbf(0.5,0.5,0.5)" << false << QVariant( QColor::fromRgbF( 0.0, 0.0, 0.0, 1.0 ) );
+      QTest::newRow( "rgb color multiply color" ) << "color_rgbf(0.4,0.6,0.8) * color_rgbf(0.5,0.5,0.5)" << false << QVariant( QColor::fromRgbF( 0.2, 0.3, 0.4, 1.0 ) );
+      QTest::newRow( "rgb color divide color" ) << "color_rgbf(0.4,0.6,0.8) / color_rgbf(0.5,0.5,0.5)" << false << QVariant( QColor::fromRgbF( 0.8, 1.0, 1.0, 1.0 ) );
+
+      // CMYK color + CMYK color
+      QTest::newRow( "cmyk color add color" ) << "color_cmykf(0.4,0.6,0.8,0.2) + color_cmykf(0.1,0.1,0.1,0.1)" << false << QVariant( QColor::fromCmykF( 0.5, 0.7, 0.9, 0.3, 1.0 ) );
+      QTest::newRow( "cmyk color add color overflow" ) << "color_cmykf(0.8,0.8,0.8,0.8) + color_cmykf(0.5,0.5,0.5,0.5)" << false << QVariant( QColor::fromCmykF( 1.0, 1.0, 1.0, 1.0, 1.0 ) );
+      QTest::newRow( "cmyk color add color alpha" ) << "color_cmykf(0.4,0.6,0.8,0.2,0.5) + color_cmykf(0.1,0.1,0.1,0.1,0.9)" << false << QVariant( QColor::fromCmykF( 0.5, 0.7, 0.9, 0.3, 0.5 ) );
+      QTest::newRow( "cmyk color subtract color" ) << "color_cmykf(0.4,0.6,0.8,0.2) - color_cmykf(0.1,0.1,0.3,0.1)" << false << QVariant( QColor::fromCmykF( 0.3, 0.5, 0.5, 0.1, 1.0 ) );
+      QTest::newRow( "cmyk color subtract color underflow" ) << "color_cmykf(0.1,0.1,0.1,0.1) - color_cmykf(0.5,0.5,0.5,0.5)" << false << QVariant( QColor::fromCmykF( 0.0, 0.0, 0.0, 0.0, 1.0 ) );
+      QTest::newRow( "cmyk color multiply color" ) << "color_cmykf(0.4,0.6,0.8,0.2) * color_cmykf(0.5,0.5,0.5,0.5)" << false << QVariant( QColor::fromCmykF( 0.2, 0.3, 0.4, 0.1, 1.0 ) );
+      QTest::newRow( "cmyk color divide color" ) << "color_cmykf(0.4,0.6,0.8,0.2) / color_cmykf(0.5,0.5,0.5,0.5)" << false << QVariant( QColor::fromCmykF( 0.8, 1.0, 1.0, 0.4, 1.0 ) );
+
+      // HSL color + HSL color
+      QTest::newRow( "hsl color add color" ) << "color_hslf(0,0,0.5) + color_hslf(0,0,0.2)" << false << QVariant( QColor::fromRgbF( 0.7f, 0.7f, 0.7f, 1.0f ) );
+      QTest::newRow( "hsl color add color overflow" ) << "color_hslf(0,0,0.8) + color_hslf(0,0,0.5)" << false << QVariant( QColor::fromRgbF( 1.0f, 1.0f, 1.0f, 1.0f ) );
+      QTest::newRow( "hsl color subtract color" ) << "color_hslf(0,0,0.7) - color_hslf(0,0,0.2)" << false << QVariant( QColor::fromRgbF( 0.5f, 0.5f, 0.5f, 1.0f ) );
+      QTest::newRow( "hsl color subtract color underflow" ) << "color_hslf(0,0,0.1) - color_hslf(0,0,0.5)" << false << QVariant( QColor::fromRgbF( 0.0f, 0.0f, 0.0f, 1.0f ) );
+      QTest::newRow( "hsl color multiply color" ) << "color_hslf(0,0,0.5) * color_hslf(0,0,0.6)" << false << QVariant( QColor::fromRgbF( 0.3f, 0.3f, 0.3f, 1.0f ) );
+      QTest::newRow( "hsl color divide color" ) << "color_hslf(0,0,0.8) / color_hslf(0,0,0.4)" << false << QVariant( QColor::fromRgbF( 1.0f, 1.0f, 1.0f, 1.0f ) );
+
+      // HSV color + HSV color
+      QTest::newRow( "hsv color add color" ) << "color_hsvf(0,0,0.5) + color_hsvf(0,0,0.2)" << false << QVariant( QColor::fromRgbF( 0.7f, 0.7f, 0.7f, 1.0f ) );
+      QTest::newRow( "hsv color add color overflow" ) << "color_hsvf(0,0,0.8) + color_hsvf(0,0,0.5)" << false << QVariant( QColor::fromRgbF( 1.0f, 1.0f, 1.0f, 1.0f ) );
+      QTest::newRow( "hsv color subtract color" ) << "color_hsvf(0,0,0.7) - color_hsvf(0,0,0.2)" << false << QVariant( QColor::fromRgbF( 0.5f, 0.5f, 0.5f, 1.0f ) );
+      QTest::newRow( "hsv color subtract color underflow" ) << "color_hsvf(0,0,0.1) - color_hsvf(0,0,0.5)" << false << QVariant( QColor::fromRgbF( 0.0f, 0.0f, 0.0f, 1.0f ) );
+      QTest::newRow( "hsv color multiply color" ) << "color_hsvf(0,0,0.5) * color_hsvf(0,0,0.6)" << false << QVariant( QColor::fromRgbF( 0.3f, 0.3f, 0.3f, 1.0f ) );
+      QTest::newRow( "hsv color divide color" ) << "color_hsvf(0,0,0.8) / color_hsvf(0,0,0.4)" << false << QVariant( QColor::fromRgbF( 1.0f, 1.0f, 1.0f, 1.0f ) );
 
       // Precedence and associativity
       QTest::newRow( "multiplication first" ) << "1+2*3" << false << QVariant( 7 );
@@ -2833,6 +3041,11 @@ class TestQgsExpression : public QObject
         << u"regexp_match( uuid('invalid-format'), '({[a-zA-Z\\\\d]{8}\\\\-[a-zA-Z\\\\d]{4}\\\\-[a-zA-Z\\\\d]{4}\\\\-[a-zA-Z\\\\d]{4}\\\\-[a-zA-Z\\\\d]{12}})')"_s
         << false
         << QVariant( 1 );
+      QTest::newRow( "uuid version unsupported" ) << u"uuid(version:=1)"_s << true << QVariant();
+      QTest::newRow( "uuid v4" ) << u"regexp_match( uuid(version:=4), '({[a-zA-Z\\\\d]{8}\\\\-[a-zA-Z\\\\d]{4}\\\\-[a-zA-Z\\\\d]{4}\\\\-[a-zA-Z\\\\d]{4}\\\\-[a-zA-Z\\\\d]{12}})')"_s << false << QVariant( 1 );
+#if QT_VERSION >= QT_VERSION_CHECK( 6, 9, 0 )
+      QTest::newRow( "uuid v7" ) << u"regexp_match( uuid(version:=7), '({[a-zA-Z\\\\d]{8}\\\\-[a-zA-Z\\\\d]{4}\\\\-[a-zA-Z\\\\d]{4}\\\\-[a-zA-Z\\\\d]{4}\\\\-[a-zA-Z\\\\d]{12}})')"_s << false << QVariant( 1 );
+#endif
 
       //exif functions
       QString testDataDir = QStringLiteral( TEST_DATA_DIR ) + '/';
@@ -3041,6 +3254,51 @@ class TestQgsExpression : public QObject
       run_evaluation_test( exp3, evalError, result );
       QgsExpression exp4( exp );
       run_evaluation_test( exp4, evalError, result );
+    }
+
+    void layer_property_type_i18n_data()
+    {
+      QTest::addColumn<QString>( "string" );
+      QTest::addColumn<QLocale::Language>( "language" );
+      QTest::addColumn<QVariant>( "expected" );
+
+      QTest::newRow( "layer_property type English" ) << u"layer_property('%1','type')"_s.arg( mPointsLayer->name() ) << QLocale::English << QVariant( "Vector" );
+      QTest::newRow( "layer_property type French" ) << u"layer_property('%1','type')"_s.arg( mPointsLayer->name() ) << QLocale::French << QVariant( "Vecteur" );
+      QTest::newRow( "layer_property type explicit translation English" ) << u"layer_property('%1','type', true)"_s.arg( mPointsLayer->name() ) << QLocale::English << QVariant( "Vector" );
+      QTest::newRow( "layer_property type explicit translation French" ) << u"layer_property('%1','type', true)"_s.arg( mPointsLayer->name() ) << QLocale::French << QVariant( "Vecteur" );
+      QTest::newRow( "layer_property type no translation English" ) << u"layer_property('%1','type', false)"_s.arg( mPointsLayer->name() ) << QLocale::English << QVariant( "Vector" );
+      QTest::newRow( "layer_property type no translation French" ) << u"layer_property('%1','type', false)"_s.arg( mPointsLayer->name() ) << QLocale::French << QVariant( "Vector" );
+    }
+
+    void layer_property_type_i18n()
+    {
+      QFETCH( QString, string );
+      QFETCH( QLocale::Language, language );
+      QFETCH( QVariant, expected );
+
+      QgsExpression exp( string );
+
+      QLocale::setDefault( language );
+      QTranslator translator;
+      const bool ok = translator.load( "qgis_" + QLocale().name(), QgsApplication::i18nPath() );
+      QVERIFY( ok );
+      QCoreApplication::installTranslator( &translator );
+
+      if ( exp.hasParserError() )
+      {
+        qDebug() << exp.parserErrorString();
+      }
+      QCOMPARE( exp.hasParserError(), false );
+
+      QVariant result = exp.evaluate();
+      if ( exp.hasEvalError() )
+      {
+        qDebug() << exp.evalErrorString();
+      }
+
+      QCOMPARE( result, expected );
+
+      QLocale::setDefault( QLocale::English );
     }
 
     void eval_columns()
@@ -3968,7 +4226,7 @@ class TestQgsExpression : public QObject
       QCOMPARE( functionNodes.size(), 5 );
       QgsExpressionFunction *fd;
       QSet<QString> actualFunctions;
-      for ( const auto &f : functionNodes )
+      for ( const QgsExpressionNodeFunction *f : std::as_const( functionNodes ) )
       {
         QCOMPARE( f->nodeType(), QgsExpressionNode::NodeType::ntFunction );
         fd = QgsExpression::QgsExpression::Functions()[f->fnIndex()];
@@ -3982,12 +4240,25 @@ class TestQgsExpression : public QObject
       QList<const QgsExpressionNodeBinaryOperator *> binaryOpsNodes( exp.findNodes<QgsExpressionNodeBinaryOperator>() );
       QCOMPARE( binaryOpsNodes.size(), 2 );
       QSet<QgsExpressionNodeBinaryOperator::BinaryOperator> actualBinaryOps;
-      for ( const auto &f : binaryOpsNodes )
+      for ( const QgsExpressionNodeBinaryOperator *f : std::as_const( binaryOpsNodes ) )
       {
         QCOMPARE( f->nodeType(), QgsExpressionNode::NodeType::ntBinaryOperator );
         actualBinaryOps << f->op();
       }
       QCOMPARE( actualBinaryOps, expectedBinaryOps );
+
+      exp.setExpression( R"(if(current_value('a') in (1, 2), 'yes', 'no'))"_L1 );
+      functionNodes = exp.findNodes<QgsExpressionNodeFunction>();
+      actualFunctions.clear();
+      for ( const QgsExpressionNodeFunction *f : std::as_const( functionNodes ) )
+      {
+        QCOMPARE( f->nodeType(), QgsExpressionNode::NodeType::ntFunction );
+        fd = QgsExpression::QgsExpression::Functions()[f->fnIndex()];
+        actualFunctions << fd->name();
+      }
+      expectedFunctions.clear();
+      expectedFunctions << u"if"_s << u"current_value"_s;
+      QCOMPARE( actualFunctions, expectedFunctions );
     }
 
     void referenced_columns_all_attributes()
@@ -4719,22 +4990,22 @@ class TestQgsExpression : public QObject
       QTest::newRow( "No Equals line" ) << "equals( $geometry, geomFromWKT('LINESTRING( 10 10, 0 0 )') )" << QgsGeometry::fromPolylineXY( line ) << false << QVariant( 0 );
       QTest::newRow( "Equals line" ) << "equals( $geometry, geomFromWKT('LINESTRING( 0 0, 10 10 )') )" << QgsGeometry::fromPolylineXY( line ) << false << QVariant( 1 );
       QTest::newRow( "Topological equals line bad backend" )
-        << "topologically_equals( $geometry, geomFromWKT('LINESTRING( 0 0, 10 10 )'), backend:='QGIS' )"
+        << "equals_topological( $geometry, geomFromWKT('LINESTRING( 0 0, 10 10 )'), backend:='QGIS' )"
         << QgsGeometry::fromPolylineXY( line )
         << true
-        << QVariant( 0 );
+        << QVariant();
       QTest::newRow( "Topological equals line" )
-        << "topologically_equals( $geometry, geomFromWKT('MULTILINESTRING(( 0 0, 10 10 ))'), backend:='GEOS' )"
+        << "equals_topological( $geometry, geomFromWKT('MULTILINESTRING(( 0 0, 10 10 ))'), backend:='GEOS' )"
         << QgsGeometry::fromPolylineXY( line )
         << false
         << QVariant( 1 );
       QTest::newRow( "Fuzzy equals line QGIS backend" )
-        << "fuzzy_equals( $geometry, geomFromWKT('LINESTRING( 0 0, 10.5 10.5 )'), epsilon:=1, backend:='QGIS' )"
+        << "equals_fuzzy( $geometry, geomFromWKT('LINESTRING( 0 0, 10.5 10.5 )'), epsilon:=1, backend:='QGIS' )"
         << QgsGeometry::fromPolylineXY( line )
         << false
         << QVariant( 1 );
       QTest::newRow( "Fuzzy equals line GEOS backend" )
-        << "fuzzy_equals( $geometry, geomFromWKT('LINESTRING( 0 0, 10.5 10.5 )'), epsilon:=1, backend:='GEOS' )"
+        << "equals_fuzzy( $geometry, geomFromWKT('LINESTRING( 0 0, 10.5 10.5 )'), epsilon:=1, backend:='GEOS' )"
         << QgsGeometry::fromPolylineXY( line )
         << false
         << QVariant( 1 );

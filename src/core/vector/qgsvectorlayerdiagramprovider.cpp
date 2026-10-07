@@ -155,7 +155,7 @@ void QgsVectorLayerDiagramProvider::drawLabel( QgsRenderContext &context, pal::L
   mSettings.renderer()->renderDiagram( feature, context, centerPt.toQPointF(), mSettings.dataDefinedProperties() );
 
   //insert into label search tree to manipulate position interactively
-  mEngine->results()->mLabelSearchTree->insertLabel( label, label->getFeaturePart()->featureId(), mLayerId, QString(), QFont(), true, false );
+  mEngine->results()->insertLabel( label, label->getFeaturePart()->featureId(), mLayerId, QString(), QFont(), true, false );
 }
 
 bool QgsVectorLayerDiagramProvider::prepare( const QgsRenderContext &context, QSet<QString> &attributeNames )
@@ -251,7 +251,7 @@ QgsLabelFeature *QgsVectorLayerDiagramProvider::registerDiagram( const QgsFeatur
   if ( !clipGeometry.isEmpty() )
   {
     const Qgis::GeometryType expectedType = geom.type();
-    geom = geom.intersection( clipGeometry );
+    geom = geom.intersection( clipGeometry, QgsGeometryParameters(), context.feedback() );
     geom.convertGeometryCollectionToSubclass( expectedType );
   }
   if ( geom.isEmpty() )

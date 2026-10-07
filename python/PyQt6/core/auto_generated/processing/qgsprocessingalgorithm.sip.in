@@ -11,6 +11,7 @@
 
 
 
+
 %ModuleHeaderCode
 #include <qgsprocessingmodelalgorithm.h>
 %End
@@ -169,6 +170,40 @@ purposes.
 The default is to return no flags.
 
 .. versionadded:: 3.40
+%End
+
+    virtual QList<QgsAcademicReference> academicReferences() const;
+%Docstring
+Returns the list of academic references describing the logic and
+processes used by the algorithm.
+
+.. versionadded:: 4.4
+%End
+
+    struct ExternalLink
+    {
+      QString description;
+      QString url;
+    };
+
+    virtual QList< QgsProcessingAlgorithm::ExternalLink > externalLinks() const;
+%Docstring
+Returns a list of external links describing the algorithm's behavior or
+source.
+
+.. versionadded:: 4.4
+%End
+
+    virtual QString implementationSourceUri() const;
+%Docstring
+Returns a URL for the source code location best reflecting the internal
+algorithm logic.
+
+Subclasses should return a URL pointing to the source code location best
+representing this internal logic, e.g. from the plugin's public code
+repository.
+
+.. versionadded:: 4.4
 %End
 
     virtual QIcon icon() const /HoldGIL/;
@@ -463,7 +498,7 @@ indicate whether the run was successful. The algorithm's
 be called when ``runResult`` is ``True``.
 %End
 
-    virtual QWidget *createCustomParametersWidget( QWidget *parent = 0 ) const /Factory/;
+    virtual QWidget *createCustomParametersWidget( QMainWindow *parent = 0 ) const /Factory/;
 %Docstring
 If an algorithm subclass implements a custom parameters widget, a copy
 of this widget should be constructed and returned by this method. The

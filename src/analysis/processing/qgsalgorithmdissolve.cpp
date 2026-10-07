@@ -104,12 +104,16 @@ QVariantMap QgsCollectorAlgorithm::processCollection(
       outputFeature.clearGeometry();
       if ( !sink->addFeature( outputFeature, QgsFeatureSink::FastInsert ) )
         throw QgsProcessingException( writeFeatureError( sink.get(), parameters, u"OUTPUT"_s ) );
+      else
+        feedback->featureAddedToSink( u"OUTPUT"_s );
     }
     else if ( !separateDisjoint )
     {
       outputFeature.setGeometry( collector( geomQueue ) );
       if ( !sink->addFeature( outputFeature, QgsFeatureSink::FastInsert ) )
         throw QgsProcessingException( writeFeatureError( sink.get(), parameters, u"OUTPUT"_s ) );
+      else
+        feedback->featureAddedToSink( u"OUTPUT"_s );
     }
     else
     {
@@ -121,6 +125,8 @@ QVariantMap QgsCollectorAlgorithm::processCollection(
         outputFeature.setGeometry( partGeom );
         if ( !sink->addFeature( outputFeature, QgsFeatureSink::FastInsert ) )
           throw QgsProcessingException( writeFeatureError( sink.get(), parameters, u"OUTPUT"_s ) );
+        else
+          feedback->featureAddedToSink( u"OUTPUT"_s );
       }
     }
   }
@@ -188,6 +194,8 @@ QVariantMap QgsCollectorAlgorithm::processCollection(
           outputFeature.setGeometry( geom );
           if ( !sink->addFeature( outputFeature, QgsFeatureSink::FastInsert ) )
             throw QgsProcessingException( writeFeatureError( sink.get(), parameters, u"OUTPUT"_s ) );
+          else
+            feedback->featureAddedToSink( u"OUTPUT"_s );
         }
         else
         {
@@ -198,6 +206,8 @@ QVariantMap QgsCollectorAlgorithm::processCollection(
             outputFeature.setGeometry( partGeom );
             if ( !sink->addFeature( outputFeature, QgsFeatureSink::FastInsert ) )
               throw QgsProcessingException( writeFeatureError( sink.get(), parameters, u"OUTPUT"_s ) );
+            else
+              feedback->featureAddedToSink( u"OUTPUT"_s );
           }
         }
       }
@@ -205,6 +215,8 @@ QVariantMap QgsCollectorAlgorithm::processCollection(
       {
         if ( !sink->addFeature( outputFeature, QgsFeatureSink::FastInsert ) )
           throw QgsProcessingException( writeFeatureError( sink.get(), parameters, u"OUTPUT"_s ) );
+        else
+          feedback->featureAddedToSink( u"OUTPUT"_s );
       }
 
       feedback->setProgress( current * 100.0 / numberFeatures );
@@ -213,6 +225,7 @@ QVariantMap QgsCollectorAlgorithm::processCollection(
   }
 
   sink->finalize();
+  feedback->featureSinkFinalized( u"OUTPUT"_s );
 
   return outputs;
 }
@@ -290,6 +303,8 @@ QgsDissolveAlgorithm *QgsDissolveAlgorithm::createInstance() const
 
 QVariantMap QgsDissolveAlgorithm::processAlgorithm( const QVariantMap &parameters, QgsProcessingContext &context, QgsProcessingFeedback *feedback )
 {
+  QGS_MARK_ALGORITHM_SOURCE
+
   const bool separateDisjoint = parameterAsBool( parameters, u"SEPARATE_DISJOINT"_s, context );
 
   return processCollection(
@@ -297,7 +312,7 @@ QVariantMap QgsDissolveAlgorithm::processAlgorithm( const QVariantMap &parameter
     context,
     feedback,
     [&]( const QVector<QgsGeometry> &parts ) -> QgsGeometry {
-      QgsGeometry result( QgsGeometry::unaryUnion( parts ) );
+      QgsGeometry result( QgsGeometry::unaryUnion( parts, QgsGeometryParameters(), feedback ) );
       if ( QgsWkbTypes::geometryType( result.wkbType() ) == Qgis::GeometryType::Line )
         result = result.mergeLines();
       // Geos may fail in some cases, let's try a slower but safer approach
@@ -311,7 +326,7 @@ QVariantMap QgsDissolveAlgorithm::processAlgorithm( const QVariantMap &parameter
         result = QgsGeometry();
         for ( const auto &p : parts )
         {
-          result = QgsGeometry::unaryUnion( QVector< QgsGeometry >() << result << p );
+          result = QgsGeometry::unaryUnion( QVector< QgsGeometry >() << result << p, QgsGeometryParameters(), feedback );
           if ( QgsWkbTypes::geometryType( result.wkbType() ) == Qgis::GeometryType::Line )
             result = result.mergeLines();
           if ( feedback->isCanceled() )
@@ -363,6 +378,8 @@ QString QgsCollectAlgorithm::groupId() const
 
 QVariantMap QgsCollectAlgorithm::processAlgorithm( const QVariantMap &parameters, QgsProcessingContext &context, QgsProcessingFeedback *feedback )
 {
+  QGS_MARK_ALGORITHM_SOURCE
+
   return processCollection( parameters, context, feedback, []( const QVector<QgsGeometry> &parts ) -> QgsGeometry { return QgsGeometry::collectGeometry( parts ); }, 0, Qgis::ProcessingFeatureSourceFlag::SkipGeometryValidityChecks );
 }
 

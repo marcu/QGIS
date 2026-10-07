@@ -33,6 +33,22 @@ void QgsAbstractMaterialSettings::writeXml( QDomElement &element, const QgsReadW
   QDomElement elemDataDefinedProperties = element.ownerDocument().createElement( u"data-defined-properties"_s );
   mDataDefinedProperties.writeXml( elemDataDefinedProperties, propertyDefinitions() );
   element.appendChild( elemDataDefinedProperties );
+  element.setAttribute( u"type"_s, type() );
+}
+
+bool QgsAbstractMaterialSettings::requiresTextureCoordinates() const
+{
+  return false;
+}
+
+bool QgsAbstractMaterialSettings::requiresTangents() const
+{
+  return false;
+}
+
+QSet<QgsAbstractMaterialSettings::Property> QgsAbstractMaterialSettings::supportedProperties() const
+{
+  return {};
 }
 
 void QgsAbstractMaterialSettings::setDataDefinedProperties( const QgsPropertyCollection &collection )
@@ -64,6 +80,12 @@ void QgsAbstractMaterialSettings::initPropertyDefinitions() const
     { static_cast<int>( Property::Ambient ), QgsPropertyDefinition( "ambient", QObject::tr( "Ambient" ), QgsPropertyDefinition::ColorNoAlpha, origin ) },
     { static_cast<int>( Property::Warm ), QgsPropertyDefinition( "warm", QObject::tr( "Warm" ), QgsPropertyDefinition::ColorNoAlpha, origin ) },
     { static_cast<int>( Property::Cool ), QgsPropertyDefinition( "cool", QObject::tr( "Cool" ), QgsPropertyDefinition::ColorNoAlpha, origin ) },
-    { static_cast<int>( Property::Specular ), QgsPropertyDefinition( "specular", QObject::tr( "Specular" ), QgsPropertyDefinition::ColorNoAlpha, origin ) }
+    { static_cast<int>( Property::Specular ), QgsPropertyDefinition( "specular", QObject::tr( "Specular" ), QgsPropertyDefinition::ColorNoAlpha, origin ) },
+    { static_cast<int>( Property::BaseColor ), QgsPropertyDefinition( "baseColor", QObject::tr( "Base color" ), QgsPropertyDefinition::ColorNoAlpha, origin ) },
+    { static_cast<int>( Property::EmissionColor ), QgsPropertyDefinition( "emissionColor", QObject::tr( "Emission color" ), QgsPropertyDefinition::ColorNoAlpha, origin ) },
+    { static_cast<int>( Property::TextureScale ), QgsPropertyDefinition( "textureScale", QObject::tr( "Texture scale" ), QgsPropertyDefinition::DoublePositive, origin ) },
+    { static_cast<int>( Property::TextureRotation ), QgsPropertyDefinition( "textureRotation", QObject::tr( "Texture rotation" ), QgsPropertyDefinition::Double, origin ) },
+    { static_cast<int>( Property::TextureOffset ), QgsPropertyDefinition( "textureOffset", QObject::tr( "Texture offset" ), QgsPropertyDefinition::Offset, origin ) }
+
   };
 }

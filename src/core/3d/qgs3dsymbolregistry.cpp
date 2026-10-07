@@ -38,15 +38,15 @@ bool Qgs3DSymbolRegistry::addSymbolType( Qgs3DSymbolAbstractMetadata *metadata )
   return true;
 }
 
-QgsAbstract3DSymbol *Qgs3DSymbolRegistry::createSymbol( const QString &type ) const
+std::unique_ptr<QgsAbstract3DSymbol> Qgs3DSymbolRegistry::createSymbol( const QString &type ) const
 {
   if ( !mMetadata.contains( type ) )
     return nullptr;
 
-  return mMetadata[type]->create();
+  return std::unique_ptr<QgsAbstract3DSymbol>( mMetadata[type]->create() );
 }
 
-QgsAbstract3DSymbol *Qgs3DSymbolRegistry::defaultSymbolForGeometryType( Qgis::GeometryType type )
+std::unique_ptr<QgsAbstract3DSymbol> Qgs3DSymbolRegistry::defaultSymbolForGeometryType( Qgis::GeometryType type )
 {
   switch ( type )
   {
@@ -61,7 +61,7 @@ QgsAbstract3DSymbol *Qgs3DSymbolRegistry::defaultSymbolForGeometryType( Qgis::Ge
   }
 }
 
-QgsFeature3DHandler *Qgs3DSymbolRegistry::createHandlerForSymbol( QgsVectorLayer *layer, const QgsAbstract3DSymbol *symbol )
+QgsFeature3DHandler *Qgs3DSymbolRegistry::createHandlerForSymbol( const QgsVectorLayer *layer, const QgsAbstract3DSymbol *symbol )
 {
   if ( !symbol )
     return nullptr;

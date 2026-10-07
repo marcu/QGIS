@@ -25,6 +25,7 @@
 #include "qgsmanageconnectionsdialog.h"
 #include "qgsnewarcgisrestconnection.h"
 #include "qgsowsconnection.h"
+#include "qgsrasterlayer.h"
 #include "qgsvectorlayer.h"
 
 #include <QDesktopServices>
@@ -100,6 +101,16 @@ void QgsArcGisRestDataItemGuiProvider::populateContextMenu( QgsDataItem *item, Q
   }
   else if ( QgsArcGisMapServiceItem *serviceItem = qobject_cast<QgsArcGisMapServiceItem *>( item ) )
   {
+    if ( serviceItem->allLayersMapServerUri().isValid() )
+    {
+      QAction *addAllLayers = new QAction( tr( "Add Raster with All MapServer Layers" ), menu );
+      const QgsMimeDataUtils::Uri allLayerUri = serviceItem->allLayersMapServerUri();
+      connect( addAllLayers, &QAction::triggered, this, [allLayerUri] {
+        auto layer = std::make_unique<QgsRasterLayer>( allLayerUri.uri, allLayerUri.name, allLayerUri.providerKey );
+        QgsProject::instance()->addMapLayer( layer.release() );
+      } );
+      menu->addAction( addAllLayers );
+    }
     QAction *viewInfo = new QAction( tr( "View Service Info" ), menu );
     connect( viewInfo, &QAction::triggered, this, [serviceItem] { QDesktopServices::openUrl( QUrl( serviceItem->path() ) ); } );
     menu->addAction( viewInfo );
@@ -110,8 +121,25 @@ void QgsArcGisRestDataItemGuiProvider::populateContextMenu( QgsDataItem *item, Q
     connect( viewInfo, &QAction::triggered, this, [serviceItem] { QDesktopServices::openUrl( QUrl( serviceItem->path() ) ); } );
     menu->addAction( viewInfo );
   }
+  else if ( QgsArcGisImageServiceItem *serviceItem = qobject_cast<QgsArcGisImageServiceItem *>( item ) )
+  {
+    QAction *viewInfo = new QAction( tr( "View Service Info" ), menu );
+    connect( viewInfo, &QAction::triggered, this, [serviceItem] { QDesktopServices::openUrl( QUrl( serviceItem->path() ) ); } );
+    menu->addAction( viewInfo );
+  }
   else if ( QgsArcGisRestParentLayerItem *layerItem = qobject_cast<QgsArcGisRestParentLayerItem *>( item ) )
   {
+    if ( layerItem->allLayersMapServerUri().isValid() )
+    {
+      QAction *addAllLayers = new QAction( tr( "Add Raster with All MapServer Layers" ), menu );
+      const QgsMimeDataUtils::Uri allLayerUri = layerItem->allLayersMapServerUri();
+      connect( addAllLayers, &QAction::triggered, this, [allLayerUri] {
+        auto layer = std::make_unique<QgsRasterLayer>( allLayerUri.uri, allLayerUri.name, allLayerUri.providerKey );
+        QgsProject::instance()->addMapLayer( layer.release() );
+      } );
+      menu->addAction( addAllLayers );
+    }
+
     QAction *viewInfo = new QAction( tr( "View Service Info" ), menu );
     connect( viewInfo, &QAction::triggered, this, [layerItem] { QDesktopServices::openUrl( QUrl( layerItem->path() ) ); } );
     menu->addAction( viewInfo );
@@ -139,6 +167,13 @@ void QgsArcGisRestDataItemGuiProvider::populateContextMenu( QgsDataItem *item, Q
     menu->addSeparator();
   }
   else if ( QgsArcGisSceneServiceLayerItem *layerItem = qobject_cast<QgsArcGisSceneServiceLayerItem *>( item ) )
+  {
+    QAction *viewInfo = new QAction( tr( "View Service Info" ), menu );
+    connect( viewInfo, &QAction::triggered, this, [layerItem] { QDesktopServices::openUrl( QUrl( layerItem->path() ) ); } );
+    menu->addAction( viewInfo );
+    menu->addSeparator();
+  }
+  else if ( QgsArcGisImageServiceLayerItem *layerItem = qobject_cast<QgsArcGisImageServiceLayerItem *>( item ) )
   {
     QAction *viewInfo = new QAction( tr( "View Service Info" ), menu );
     connect( viewInfo, &QAction::triggered, this, [layerItem] { QDesktopServices::openUrl( QUrl( layerItem->path() ) ); } );

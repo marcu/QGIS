@@ -98,7 +98,7 @@ void QgsPointCloudRgbRenderer::renderBlock( const QgsPointCloudBlock *block, Qgs
 
   const bool renderElevation = context.renderContext().elevationMap();
   const QgsDoubleRange zRange = context.renderContext().zRange();
-  const bool considerZ = !zRange.isInfinite() || renderElevation;
+  const bool considerZ = !zRange.isInfinite() || renderElevation || !context.mapCrsZFilter().isInfinite();
 
   int rendered = 0;
   double x = 0;
@@ -106,6 +106,8 @@ void QgsPointCloudRgbRenderer::renderBlock( const QgsPointCloudBlock *block, Qgs
   double z = 0;
   const QgsCoordinateTransform ct = context.renderContext().coordinateTransform();
   const bool reproject = ct.isValid();
+
+  bool dataDefinedPropertiesActive = dataDefinedProperties().isActive( QgsPointCloudRenderer::Property::Color );
   for ( int i = 0; i < count; ++i )
   {
     if ( context.renderContext().renderingStopped() )
@@ -135,6 +137,9 @@ void QgsPointCloudRgbRenderer::renderBlock( const QgsPointCloudBlock *block, Qgs
           continue;
         }
       }
+
+      if ( !context.mapCrsZFilter().contains( z ) )
+        continue;
 
       int red = 0;
       context.getAttribute( ptr, i * recordSize + redOffset, redType, red );
@@ -169,16 +174,20 @@ void QgsPointCloudRgbRenderer::renderBlock( const QgsPointCloudBlock *block, Qgs
       green = std::max( 0, std::min( 255, green ) );
       blue = std::max( 0, std::min( 255, blue ) );
 
+      QColor color( red, green, blue );
+      if ( dataDefinedPropertiesActive )
+        color = colorFromExpression( block, i, color, context );
+
       if ( renderAsTriangles() )
       {
-        addPointToTriangulation( x, y, z, QColor( red, green, blue ), context );
+        addPointToTriangulation( x, y, z, color, context );
 
         // We don't want to render any points if we're rendering triangles and there is no preview painter
         if ( !context.renderContext().previewRenderPainter() )
           continue;
       }
 
-      drawPoint( x, y, QColor( red, green, blue ), context );
+      drawPoint( x, y, color, context );
       if ( renderElevation )
         drawPointToElevationMap( x, y, z, context );
 
@@ -265,9 +274,9 @@ QDomElement QgsPointCloudRgbRenderer::save( QDomDocument &doc, const QgsReadWrit
   return rendererElem;
 }
 
-QSet<QString> QgsPointCloudRgbRenderer::usedAttributes( const QgsPointCloudRenderContext & ) const
+QSet<QString> QgsPointCloudRgbRenderer::usedAttributes( const QgsPointCloudRenderContext &context ) const
 {
-  QSet<QString> res;
+  QSet<QString> res = QgsPointCloudRenderer::usedAttributes( context );
   res << mRedAttribute << mGreenAttribute << mBlueAttribute;
   return res;
 }

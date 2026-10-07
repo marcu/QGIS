@@ -52,6 +52,7 @@ email                : sherman at mrcc.com
 #include "qgsmapthemecollection.h"
 #include "qgsmaptoolpan.h"
 #include "qgsmaptopixel.h"
+#include "qgsmessagebar.h"
 #include "qgsmessagelog.h"
 #include "qgsmimedatautils.h"
 #include "qgsoverlaywidgetlayout.h"
@@ -65,12 +66,15 @@ email                : sherman at mrcc.com
 #include "qgsscreenhelper.h"
 #include "qgssettings.h"
 #include "qgssettingsentryenumflag.h"
+#include "qgssettingsentryimpl.h"
 #include "qgssettingsregistrygui.h"
+#include "qgssettingstree.h"
 #include "qgsstatusbar.h"
 #include "qgssvgcache.h"
 #include "qgssymbollayerutils.h"
 #include "qgstemporalcontroller.h"
 #include "qgstemporalnavigationobject.h"
+#include "qgsuserinputwidget.h"
 #include "qgsvectorlayer.h"
 #include "qgsvectortilelayer.h"
 
@@ -102,6 +106,12 @@ email                : sherman at mrcc.com
 #include "moc_qgsmapcanvas.cpp"
 
 using namespace Qt::StringLiterals;
+
+const QgsSettingsEntryString *QgsMapCanvas::settingsCustomCoordinateCrs = new QgsSettingsEntryString( u"custom-coordinate-crs"_s, QgsSettingsTree::sTreeMap, QString() );
+const QgsSettingsEntryBool *QgsMapCanvas::settingsMainCanvasPreviewJobs
+  = new QgsSettingsEntryBool( u"main-canvas-preview-jobs"_s, QgsSettingsTree::sTreeRendering, true, u"Whether the main map canvas displays preview tiles while rendering"_s );
+const QgsSettingsEntryBool *QgsMapCanvas::settingsEnableRenderCaching
+  = new QgsSettingsEntryBool( u"enable-render-caching"_s, QgsSettingsTree::sTreeRendering, true, u"Whether map rendering uses a cache to speed up redraws"_s );
 
 /**
  * \ingroup gui
@@ -174,6 +184,7 @@ QgsMapCanvas::QgsMapCanvas( QWidget *parent )
     mSettings.setFlag( Qgis::MapSettingsFlag::DrawEditingInfo );
     mSettings.setFlag( Qgis::MapSettingsFlag::UseRenderingOptimization );
     mSettings.setFlag( Qgis::MapSettingsFlag::RenderPartialOutput );
+    mSettings.setFlag( Qgis::MapSettingsFlag::DrawLabelSelection );
     mSettings.setEllipsoid( QgsProject::instance()->ellipsoid() );
     connect( QgsProject::instance(), &QgsProject::ellipsoidChanged, this, [this] {
       mSettings.setEllipsoid( QgsProject::instance()->ellipsoid() );
@@ -284,8 +295,6 @@ QgsMapCanvas::~QgsMapCanvas()
   qDeleteAll( mScene->items() );
 
   mScene->deleteLater(); // crashes in python tests on windows
-
-  delete mCache;
 }
 
 void QgsMapCanvas::addOverlayWidget( QWidget *widget, Qt::Edge edge )
@@ -523,7 +532,7 @@ void QgsMapCanvas::setDestinationCrs( const QgsCoordinateReferenceSystem &crs )
 
   // try to reproject current extent to the new one
   QgsRectangle rect;
-  if ( !mSettings.visibleExtent().isEmpty() )
+  if ( !mSettings.visibleExtent().isEmpty() && crs.isSameCelestialBody( mSettings.destinationCrs() ) )
   {
     const QgsCoordinateTransform
       transform( mSettings.destinationCrs(), crs, QgsProject::instance(), Qgis::CoordinateTransformationFlag::BallparkTransformsAreAppropriate | Qgis::CoordinateTransformationFlag::IgnoreImpossibleTransformations );
@@ -652,19 +661,18 @@ void QgsMapCanvas::setCachingEnabled( bool enabled )
 
   if ( enabled )
   {
-    mCache = new QgsMapRendererCache;
+    mCache = std::make_unique<QgsMapRendererCache>();
   }
   else
   {
-    delete mCache;
-    mCache = nullptr;
+    mCache.reset();
   }
   mPreviousRenderedItemResults.reset();
 }
 
 bool QgsMapCanvas::isCachingEnabled() const
 {
-  return nullptr != mCache;
+  return nullptr != mCache.get();
 }
 
 void QgsMapCanvas::clearCache()
@@ -680,7 +688,7 @@ void QgsMapCanvas::clearCache()
 
 QgsMapRendererCache *QgsMapCanvas::cache()
 {
-  return mCache;
+  return mCache.get();
 }
 
 void QgsMapCanvas::setParallelRenderingEnabled( bool enabled )
@@ -858,7 +866,7 @@ void QgsMapCanvas::refreshMap()
     mJob = new QgsMapRendererSequentialJob( renderSettings );
 
   connect( mJob, &QgsMapRendererJob::finished, this, &QgsMapCanvas::rendererJobFinished );
-  mJob->setCache( mCache );
+  mJob->setCache( mCache.get() );
   mJob->setLayerRenderingTimeHints( mLastLayerRenderTime );
 
   mJob->start();
@@ -1063,6 +1071,26 @@ void QgsMapCanvas::setStatusBar( QgsStatusBar *bar )
   mStatusBar = bar;
 }
 
+void QgsMapCanvas::setMessageBar( QgsMessageBar *bar )
+{
+  mMessageBar = bar;
+}
+
+QgsMessageBar *QgsMapCanvas::messageBar()
+{
+  return mMessageBar.data();
+}
+
+void QgsMapCanvas::setUserInputWidget( QgsUserInputWidget *userInputWidget )
+{
+  mUserInputWidget = userInputWidget;
+}
+
+QgsUserInputWidget *QgsMapCanvas::userInputWidget()
+{
+  return mUserInputWidget.data();
+}
+
 bool QgsMapCanvas::previewJobsEnabled() const
 {
   return mUsePreviewJobs;
@@ -1260,10 +1288,10 @@ void QgsMapCanvas::showContextMenu( QgsMapMouseEvent *event )
 
       QAction *copyCoordinateAction = new QAction( u"%5 (%1%2, %3%4)"_s.arg( firstNumber, firstSuffix, secondNumber, secondSuffix, identifier ), &menu );
 
-      connect( copyCoordinateAction, &QAction::triggered, this, [firstNumber, firstSuffix, secondNumber, secondSuffix, transformedPoint] {
+      connect( copyCoordinateAction, &QAction::triggered, this, [firstNumber, secondNumber, transformedPoint] {
         QClipboard *clipboard = QApplication::clipboard();
 
-        const QString coordinates = u"%1%2, %3%4"_s.arg( firstNumber, firstSuffix, secondNumber, secondSuffix );
+        const QString coordinates = firstNumber + ',' + secondNumber;
 
         //if we are on x11 system put text into selection ready for middle button pasting
         if ( clipboard->supportsSelection() )
@@ -1280,11 +1308,11 @@ void QgsMapCanvas::showContextMenu( QgsMapMouseEvent *event )
 
   addCoordinateFormat( tr( "Map CRS — %1" ).arg( mSettings.destinationCrs().userFriendlyIdentifier( Qgis::CrsIdentifierType::MediumString ) ), mSettings.destinationCrs() );
   QgsCoordinateReferenceSystem wgs84( u"EPSG:4326"_s );
-  if ( mSettings.destinationCrs() != wgs84 )
+  if ( mSettings.destinationCrs() != wgs84 && mSettings.destinationCrs().isSameCelestialBody( wgs84 ) )
     addCoordinateFormat( wgs84.userFriendlyIdentifier( Qgis::CrsIdentifierType::MediumString ), wgs84 );
 
   QgsSettings settings;
-  const QString customCrsString = settings.value( u"qgis/custom_coordinate_crs"_s ).toString();
+  const QString customCrsString = QgsMapCanvas::settingsCustomCoordinateCrs->value();
   if ( !customCrsString.isEmpty() )
   {
     QgsCoordinateReferenceSystem customCrs( customCrsString );
@@ -1300,7 +1328,7 @@ void QgsMapCanvas::showContextMenu( QgsMapMouseEvent *event )
     selector.setCrs( QgsCoordinateReferenceSystem( customCrsString ) );
     if ( selector.exec() )
     {
-      QgsSettings().setValue( u"qgis/custom_coordinate_crs"_s, selector.crs().authid().isEmpty() ? selector.crs().toWkt( Qgis::CrsWktVariant::Preferred ) : selector.crs().authid() );
+      QgsMapCanvas::settingsCustomCoordinateCrs->setValue( selector.crs().authid().isEmpty() ? selector.crs().toWkt( Qgis::CrsWktVariant::Preferred ) : selector.crs().authid() );
     }
   } );
   copyCoordinateMenu->addAction( setCustomCrsAction );
@@ -1945,6 +1973,48 @@ void QgsMapCanvas::zoomToSelected( const QList<QgsMapLayer *> &layers )
   zoomToFeatureExtent( selectionExtent );
 }
 
+void QgsMapCanvas::zoomToLayers( const QList<QgsMapLayer *> &layers )
+{
+  QgsRectangle extent;
+  extent.setNull();
+
+  for ( QgsMapLayer *mapLayer : layers )
+  {
+    QgsRectangle layerExtent = mapLayer->extent();
+
+    QgsVectorLayer *vLayer = qobject_cast<QgsVectorLayer *>( mapLayer );
+    if ( vLayer )
+    {
+      if ( vLayer->geometryType() == Qgis::GeometryType::Null )
+        continue;
+
+      if ( layerExtent.isEmpty() )
+      {
+        vLayer->updateExtents();
+        layerExtent = vLayer->extent();
+      }
+    }
+
+    if ( layerExtent.isNull() )
+      continue;
+
+    //transform extent
+    layerExtent = mapSettings().layerExtentToOutputExtent( mapLayer, layerExtent );
+
+    extent.combineExtentWith( layerExtent );
+  }
+
+  if ( extent.isNull() )
+    return;
+
+  // Increase bounding box with 5%, so that layer is a bit inside the borders
+  extent.scale( 1.05 );
+
+  //zoom to bounding box
+  setExtent( extent, true );
+  refresh();
+}
+
 QgsDoubleRange QgsMapCanvas::zRange() const
 {
   return mSettings.zRange();
@@ -2243,7 +2313,7 @@ void QgsMapCanvas::flashGeometries( const QList<QgsGeometry> &geometries, const 
     rb->setSecondaryStrokeColor( QColor( 255, 255, 255 ) );
   }
   if ( geomType == Qgis::GeometryType::Point )
-    rb->setIcon( QgsRubberBand::ICON_CIRCLE );
+    rb->setIcon( Qgis::RubberBandIconType::Circle );
 
   QColor startColor = color1;
   if ( !startColor.isValid() )
@@ -2280,9 +2350,6 @@ void QgsMapCanvas::flashGeometries( const QList<QgsGeometry> &geometries, const 
     else
     {
       rb->setStrokeColor( c );
-      QColor c = rb->secondaryStrokeColor();
-      c.setAlpha( c.alpha() );
-      rb->setSecondaryStrokeColor( c );
     }
     rb->update();
   } );

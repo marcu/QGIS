@@ -100,6 +100,12 @@ namespace QgsWms
       QList<QgsMapLayer *> layers() const;
 
       /**
+       * Returns a hash of all the layers that can be rendered and for each a list of the layer names, group names, etc. requesting it.
+       * The list differs from layersToRender by not containing external layers etc.
+       */
+      QHash<const QgsMapLayer *, QStringList> acceptableLayersToRender() const;
+
+      /**
        * Returns a list of all layers to actually render according to the
        * current configuration.
        */
@@ -279,15 +285,25 @@ namespace QgsWms
        */
       QgsFeedback *socketFeedback() const;
 
+      QHash<QgsMapLayer *, QgsDateTimeRange> perLayerTemporalRange() const { return mPerLayerTemporalRange; }
+
     private:
       void initNicknameLayers();
       void initRestrictedLayers();
       void initLayerGroupsRecursive( const QgsLayerTreeGroup *group, const QString &groupName );
 
+      /**
+       * Initialize per layer temporal range for \a group with its \a groupName using group
+       * default display type value when different from Qgis::WmsDimensionDefaultDisplay::AllValues
+       * and if TIME WMS parameter has not been set.
+       */
+      void initPerLayerTemporalRange( const QgsLayerTreeGroup *group, const QString &groupName );
+
       void searchLayersToRender();
       void searchLayersToRenderSld();
       void searchLayersToRenderStyle();
       void removeUnwantedLayers();
+      QHash<const QgsMapLayer *, QStringList> acceptableLayers( const QStringList &requestedLayerNames ) const;
 
       /**
        * Adds the layer to the list of layers to be rendered if the layer is readable
@@ -314,6 +330,11 @@ namespace QgsWms
 
       // map of layers to use for rendering
       QList<QgsMapLayer *> mLayersToRender;
+
+      // map of layers that can be rendered and for each a list of the layer names, group names, etc. requesting it
+      QHash<const QgsMapLayer *, QStringList> mAcceptableLayersToRender;
+
+      QHash<QgsMapLayer *, QgsDateTimeRange> mPerLayerTemporalRange;
 
       // list of layers which are not usable
       QStringList mRestrictedLayers;

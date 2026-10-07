@@ -28,6 +28,7 @@
 #include "qgsprojectstorageregistry.h"
 #include "qgsprojectviewsettings.h"
 #include "qgsreferencedgeometry.h"
+#include "qgsserverinterface.h"
 #include "qgsserverprojectutils.h"
 #include "qgsvectorlayer.h"
 
@@ -149,7 +150,7 @@ QMap<QString, QString> QgsLandingPageUtils::projects( const QgsServerSettings &s
   return AVAILABLE_PROJECTS;
 }
 
-json QgsLandingPageUtils::projectInfo( const QString &projectUri, const QgsServerSettings *serverSettings, const QgsServerRequest &request )
+json QgsLandingPageUtils::projectInfo( const QString &projectUri, const QgsServerSettings *serverSettings, const QgsServerRequest &request, const QgsServerInterface *serverInterface )
 {
   // Helper for QStringList
   auto jList = []( const QStringList &l ) -> json {
@@ -233,8 +234,9 @@ json QgsLandingPageUtils::projectInfo( const QString &projectUri, const QgsServe
     if ( viewSettings && !viewSettings->defaultViewExtent().isEmpty() )
     {
       QgsRectangle extent { viewSettings->defaultViewExtent() };
-      // Need conversion?
-      if ( viewSettings->defaultViewExtent().crs().authid() != "EPSG:4326"_L1 )
+      // Only transform to EPSG:4326 for Earth-based CRS
+      const QgsCoordinateReferenceSystem viewCrs { viewSettings->defaultViewExtent().crs() };
+      if ( viewCrs.authid() != "EPSG:4326"_L1 && viewCrs.isEarthCrs() )
       {
         QgsCoordinateTransform ct { p->crs(), QgsCoordinateReferenceSystem::fromEpsgId( 4326 ), p->transformContext() };
         extent = ct.transform( extent );
@@ -263,8 +265,8 @@ json QgsLandingPageUtils::projectInfo( const QString &projectUri, const QgsServe
               canvasElement.firstChildElement( u"xmax"_s ).text().toDouble(),
               canvasElement.firstChildElement( u"ymax"_s ).text().toDouble(),
             };
-            // Need conversion?
-            if ( temporaryProject.crs().authid() != "EPSG:4326"_L1 )
+            // Only transform to EPSG:4326 for Earth-based CRS
+            if ( temporaryProject.crs().authid() != "EPSG:4326"_L1 && temporaryProject.crs().isEarthCrs() )
             {
               QgsCoordinateTransform ct { temporaryProject.crs(), QgsCoordinateReferenceSystem::fromEpsgId( 4326 ), temporaryProject.transformContext() };
               extent = ct.transform( extent );
@@ -298,17 +300,33 @@ json QgsLandingPageUtils::projectInfo( const QString &projectUri, const QgsServe
     info["description"] = description.toStdString();
     // CRS
     const QStringList wmsOutputCrsList { QgsServerProjectUtils::wmsOutputCrsList( *p ) };
-    const QString crs = wmsOutputCrsList.contains( u"EPSG:4326"_s ) || wmsOutputCrsList.isEmpty() ? u"EPSG:4326"_s : wmsOutputCrsList.first();
+    // Prefer EPSG:4326 for Earth-based projects; for non-Earth use the first available CRS or project CRS
+    QString crs;
+    if ( p->crs().isEarthCrs() && ( wmsOutputCrsList.contains( u"EPSG:4326"_s ) || wmsOutputCrsList.isEmpty() ) )
+      crs = u"EPSG:4326"_s;
+    else if ( !wmsOutputCrsList.isEmpty() )
+      crs = wmsOutputCrsList.first();
+    else
+      crs = p->crs().authid();
     info["crs"] = crs.toStdString();
     // Typenames for WMS
     const bool useIds { QgsServerProjectUtils::wmsUseLayerIds( *p ) };
     QStringList typenames;
     const QStringList wmsRestrictedLayers { QgsServerProjectUtils::wmsRestrictedLayers( *p ) };
+    const QStringList wfsLayerIds { QgsServerProjectUtils::wfsLayerIds( *p ) };
+    QSet<QString> allowedLayerIds;
     const auto constLayers { p->mapLayers().values() };
     for ( const auto &l : constLayers )
     {
       if ( !wmsRestrictedLayers.contains( l->name() ) )
       {
+#ifdef HAVE_SERVER_PYTHON_PLUGINS
+        if ( serverInterface && serverInterface->accessControls() && !serverInterface->accessControls()->layerReadPermission( l ) )
+        {
+          continue;
+        }
+#endif
+        allowedLayerIds.insert( l->id() );
         typenames.push_back( useIds ? l->id() : l->name() );
       }
     }
@@ -349,13 +367,17 @@ json QgsLandingPageUtils::projectInfo( const QString &projectUri, const QgsServe
       }
     }
     info["extent"] = json::array( { extent.xMinimum(), extent.yMinimum(), extent.xMaximum(), extent.yMaximum() } );
-    QgsRectangle geographicExtent { extent };
-    if ( targetCrs.authid() != "EPSG:4326"_L1 )
+    // geographic_extent is only meaningful for Earth-based projects (EPSG:4326 is Earth-specific)
+    if ( targetCrs.isEarthCrs() )
     {
-      QgsCoordinateTransform ct { targetCrs, QgsCoordinateReferenceSystem::fromEpsgId( 4326 ), p->transformContext() };
-      geographicExtent = ct.transform( geographicExtent );
+      QgsRectangle geographicExtent { extent };
+      if ( targetCrs.authid() != "EPSG:4326"_L1 )
+      {
+        QgsCoordinateTransform ct { targetCrs, QgsCoordinateReferenceSystem::fromEpsgId( 4326 ), p->transformContext() };
+        geographicExtent = ct.transform( geographicExtent );
+      }
+      info["geographic_extent"] = json::array( { geographicExtent.xMinimum(), geographicExtent.yMinimum(), geographicExtent.xMaximum(), geographicExtent.yMaximum() } );
     }
-    info["geographic_extent"] = json::array( { geographicExtent.xMinimum(), geographicExtent.yMinimum(), geographicExtent.xMaximum(), geographicExtent.yMaximum() } );
 
     // Metadata
     json metadata;
@@ -391,7 +413,15 @@ json QgsLandingPageUtils::projectInfo( const QString &projectUri, const QgsServe
     capabilities["owsServiceTitle"] = QgsServerProjectUtils::owsServiceTitle( *p ).toStdString();
     capabilities["wcsLayerIds"] = jList( QgsServerProjectUtils::wcsLayerIds( *p ) );
     capabilities["wcsServiceUrl"] = QgsServerProjectUtils::wcsServiceUrl( *p, request, *serverSettings ).toStdString();
-    capabilities["wfsLayerIds"] = jList( QgsServerProjectUtils::wfsLayerIds( *p ) );
+    QStringList filteredWfsLayerIds;
+    for ( const QString &layerId : std::as_const( wfsLayerIds ) )
+    {
+      if ( allowedLayerIds.contains( layerId ) )
+      {
+        filteredWfsLayerIds.push_back( layerId );
+      }
+    }
+    capabilities["wfsLayerIds"] = jList( filteredWfsLayerIds );
     capabilities["wfsServiceUrl"] = QgsServerProjectUtils::wfsServiceUrl( *p, request, *serverSettings ).toStdString();
     capabilities["wfstDeleteLayerIds"] = jList( QgsServerProjectUtils::wfstDeleteLayerIds( *p ) );
     capabilities["wfstInsertLayerIds"] = jList( QgsServerProjectUtils::wfstInsertLayerIds( *p ) );
@@ -441,7 +471,7 @@ json QgsLandingPageUtils::projectInfo( const QString &projectUri, const QgsServe
     QStringList wmsLayersQueryable;
     for ( const auto &l : constLayers )
     {
-      if ( !wmsRestrictedLayers.contains( l->name() ) )
+      if ( allowedLayerIds.contains( l->id() ) )
       {
         json wmsLayer {
           { "name", l->name().toStdString() },
@@ -556,7 +586,7 @@ json QgsLandingPageUtils::projectInfo( const QString &projectUri, const QgsServe
     info["wms_layers_queryable"] = jList( wmsLayersQueryable );
     info["wms_layers_searchable"] = jList( wmsLayersSearchable );
     info["wms_layers_typename_id_map"] = wmsLayersTypenameIdMap;
-    info["toc"] = layerTree( *p, wmsLayersQueryable, wmsLayersSearchable, wmsRestrictedLayers );
+    info["toc"] = layerTree( *p, wmsLayersQueryable, wmsLayersSearchable, wmsRestrictedLayers, allowedLayerIds, filteredWfsLayerIds );
   }
   else
   {
@@ -565,10 +595,16 @@ json QgsLandingPageUtils::projectInfo( const QString &projectUri, const QgsServe
   return info;
 }
 
-json QgsLandingPageUtils::layerTree( const QgsProject &project, const QStringList &wmsLayersQueryable, const QStringList &wmsLayersSearchable, const QStringList &wmsRestrictedLayers )
+json QgsLandingPageUtils::layerTree(
+  const QgsProject &project,
+  const QStringList &wmsLayersQueryable,
+  const QStringList &wmsLayersSearchable,
+  const QStringList &wmsRestrictedLayers,
+  const QSet<QString> &allowedLayerIds,
+  const QStringList &wfsLayerIds
+)
 {
   const bool useIds { QgsServerProjectUtils::wmsUseLayerIds( project ) };
-  const QStringList wfsLayerIds { QgsServerProjectUtils::wfsLayerIds( project ) };
 
 
   std::function<json( const QgsLayerTreeNode *, const QString & )> harvest = [&]( const QgsLayerTreeNode *node, const QString &parentId ) -> json {
@@ -584,7 +620,10 @@ json QgsLandingPageUtils::layerTree( const QgsProject &project, const QStringLis
     if ( QgsLayerTree::isLayer( node ) )
     {
       const QgsLayerTreeLayer *l { static_cast<const QgsLayerTreeLayer *>( node ) };
-      if ( l->layer() && ( l->layer()->type() == Qgis::LayerType::Vector || l->layer()->type() == Qgis::LayerType::Raster ) && !wmsRestrictedLayers.contains( l->name() ) )
+      if ( l->layer()
+           && ( l->layer()->type() == Qgis::LayerType::Vector || l->layer()->type() == Qgis::LayerType::Raster )
+           && !wmsRestrictedLayers.contains( l->name() )
+           && allowedLayerIds.contains( l->layerId() ) )
       {
         rec["id"] = l->layerId().toStdString();
         nodeIdentifier = l->layerId();

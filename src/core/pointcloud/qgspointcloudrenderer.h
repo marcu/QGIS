@@ -21,11 +21,14 @@
 #include "qgis_core.h"
 #include "qgis_sip.h"
 #include "qgspointcloudattribute.h"
+#include "qgspropertycollection.h"
+#include "qgsrange.h"
 #include "qgsrendercontext.h"
 #include "qgsstyle.h"
 #include "qgsvector3d.h"
 
 #include <QString>
+#include <QStringList>
 
 using namespace Qt::StringLiterals;
 
@@ -34,6 +37,7 @@ class QgsLayerTreeLayer;
 class QgsLayerTreeModelLegendNode;
 class QgsPointCloudLayer;
 class QgsElevationMap;
+class QgsExpressionContextScope;
 
 /**
  * \ingroup core
@@ -173,6 +177,25 @@ class CORE_EXPORT QgsPointCloudRenderContext
      */
     QgsFeedback *feedback() const { return mFeedback; }
 
+    /**
+     * Sets the allowed range of Z values.
+     *
+     * Points which Z value is not in \a range after transformation will be discarded from rendering.
+     * If both bounds are set to infinite, no filtering is applied.
+     *
+     * \see mapCrsZFilter()
+     * \since QGIS 4.4
+     */
+    void setMapCrsZFilter( const QgsDoubleRange &range ) { mMapCrsZFilter = range; }
+
+    /**
+     * Returns the allowable range of z values in the map (destination) CRS.
+     *
+     * \see setMapCrsZFilter()
+     * \since QGIS 4.4
+     */
+    QgsDoubleRange mapCrsZFilter() const { return mMapCrsZFilter; }
+
 #ifndef SIP_RUN
 
     /**
@@ -262,6 +285,8 @@ class CORE_EXPORT QgsPointCloudRenderContext
     double mZValueScale = 1.0;
     double mZValueFixedOffset = 0;
 
+    QgsDoubleRange mMapCrsZFilter;
+
     QgsFeedback *mFeedback = nullptr;
 
     TriangulationData mTriangulationData;
@@ -337,6 +362,15 @@ class CORE_EXPORT QgsPointCloudRenderer
 #endif
 
   public:
+
+    /**
+     * Data-defined properties that can be set on the renderer.
+     * \since QGIS 4.2
+     */
+    enum class Property : int
+    {
+      Color = 0, //!< Point color
+    };
 
     QgsPointCloudRenderer();
 
@@ -743,6 +777,30 @@ class CORE_EXPORT QgsPointCloudRenderer
      */
     void setElevationShadingRenderer( const QgsElevationShadingRenderer &renderer ) { mElevationShadingRenderer = renderer; }
 
+    /**
+     * Returns the property definitions for data defined properties used by the renderer.
+     *
+     * \since QGIS 4.2
+     */
+    static const QgsPropertiesDefinition &propertyDefinitions();
+
+    /**
+     * Returns the renderer's property collection, used for data defined overrides.
+     *
+     * \see setDataDefinedProperties()
+     * \since QGIS 4.2
+     */
+    const QgsPropertyCollection &dataDefinedProperties() const { return mDataDefinedProperties; }
+
+    /**
+     * Sets the renderer's property collection, used for data defined overrides.
+     *
+     * \param collection property collection. Existing properties will be replaced.
+     * \see dataDefinedProperties()
+     * \since QGIS 4.2
+     */
+    void setDataDefinedProperties( const QgsPropertyCollection &collection ) { mDataDefinedProperties = collection; }
+
   protected:
     /**
      * Retrieves the x and y coordinate for the point at index \a i.
@@ -848,6 +906,13 @@ class CORE_EXPORT QgsPointCloudRenderer
      */
     void saveCommonProperties( QDomElement &element, const QgsReadWriteContext &context ) const;
 
+    /**
+     * Computes color from the expression set, uses expression referenced variables and renderer base color.
+     *
+     * \since QGIS 4.2
+     */
+    QColor colorFromExpression( const QgsPointCloudBlock *block, int pointIndex, const QColor &rendererColor, QgsPointCloudRenderContext &context ) SIP_SKIP;
+
   private:
 #ifdef SIP_RUN
     QgsPointCloudRenderer( const QgsPointCloudRenderer &other );
@@ -881,6 +946,12 @@ class CORE_EXPORT QgsPointCloudRenderer
     double mOverviewSwitchingScale = 1.0;
 
     QgsElevationShadingRenderer mElevationShadingRenderer;
+
+    static void initPropertyDefinitions();
+    static QgsPropertiesDefinition sPropertyDefinitions;
+    QgsPropertyCollection mDataDefinedProperties;
+
+    std::unique_ptr<QgsExpressionContextScope> mExpressionContextScope;
 };
 
 #endif // QGSPOINTCLOUDRENDERER_H

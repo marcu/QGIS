@@ -30,6 +30,7 @@ Encapsulates parameters and properties of a network request.
       AttributeInitiatorClass,
       AttributeInitiatorRequestId,
       AttributeOriginalHeaders,
+      AttributeUserAgentSuffix,
     };
 
     QgsNetworkRequestParameters();
@@ -118,7 +119,7 @@ used.
 #include "qgsnetworkaccessmanager.h"
 %End
   public:
-    static QgsNetworkAccessManager *instance( Qt::ConnectionType connectionType = Qt::BlockingQueuedConnection );
+    static QgsNetworkAccessManager *instance( Qt::ConnectionType connectionType = Qt::BlockingQueuedConnection ) /DisallowNone/;
 %Docstring
 Returns a pointer to the active QgsNetworkAccessManager for the current
 thread.

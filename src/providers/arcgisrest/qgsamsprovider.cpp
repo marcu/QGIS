@@ -227,9 +227,15 @@ QgsAmsProvider::QgsAmsProvider( const QString &uri, const ProviderOptions &optio
   {
     extentData = mLayerInfo.value( u"extent"_s ).toMap();
   }
-  else
+  else if ( mLayerInfo.contains( u"fullExtent"_s ) )
   {
     extentData = mLayerInfo.value( u"fullExtent"_s ).toMap();
+  }
+
+  // tile services may not include layer-level extent info - fall back to service-level extent
+  if ( extentData.isEmpty() )
+  {
+    extentData = mServiceInfo.value( u"fullExtent"_s ).toMap();
   }
   mExtent.setXMinimum( extentData[u"xmin"_s].toDouble() );
   mExtent.setYMinimum( extentData[u"ymin"_s].toDouble() );
@@ -468,50 +474,9 @@ QgsAmsProvider *QgsAmsProvider::clone() const
   return provider;
 }
 
-static inline QString dumpVariantMap( const QVariantMap &variantMap, const QString &title = QString() )
-{
-  QString result;
-  if ( !title.isEmpty() )
-  {
-    result += u"<tr><td class=\"highlight\">%1</td><td></td></tr>"_s.arg( title );
-  }
-  for ( auto it = variantMap.constBegin(); it != variantMap.constEnd(); ++it )
-  {
-    const QVariantMap childMap = it.value().toMap();
-    const QVariantList childList = it.value().toList();
-    if ( !childList.isEmpty() )
-    {
-      result += u"<tr><td class=\"highlight\">%1</td><td><ul>"_s.arg( it.key() );
-      for ( const QVariant &v : childList )
-      {
-        const QVariantMap grandChildMap = v.toMap();
-        if ( !grandChildMap.isEmpty() )
-        {
-          result += u"<li><table>%1</table></li>"_s.arg( dumpVariantMap( grandChildMap ) );
-        }
-        else
-        {
-          result += u"<li>%1</li>"_s.arg( QgsStringUtils::insertLinks( v.toString() ) );
-        }
-      }
-      result += "</ul></td></tr>"_L1;
-    }
-    else if ( !childMap.isEmpty() )
-    {
-      result += u"<tr><td class=\"highlight\">%1</td><td><table>%2</table></td></tr>"_s.arg( it.key(), dumpVariantMap( childMap ) );
-    }
-    else
-    {
-      result += u"<tr><td class=\"highlight\">%1</td><td>%2</td></tr>"_s.arg( it.key(), QgsStringUtils::insertLinks( it.value().toString() ) );
-    }
-  }
-  return result;
-}
-
 QString QgsAmsProvider::htmlMetadata() const
 {
-  // This must return the content of a HTML table starting by tr and ending by tr
-  return dumpVariantMap( mServiceInfo, tr( "Service Info" ) ) + dumpVariantMap( mLayerInfo, tr( "Layer Info" ) );
+  return QgsVariantUtils::variantToHtml( mServiceInfo, tr( "Service Info" ) ) + QgsVariantUtils::variantToHtml( mLayerInfo, tr( "Layer Info" ) );
 }
 
 static bool _fuzzyContainsRect( const QRectF &r1, const QRectF &r2 )
@@ -580,7 +545,11 @@ QImage QgsAmsProvider::draw( const QgsRectangle &viewExtent, int pixelWidth, int
     }
 
     auto getRequests = [&levelToResMap, &viewExtent, tileWidth, tileHeight, ox, oy, targetRes, &dataSource]( int level, TileRequests &requests ) {
-      const double resolution = levelToResMap.value( level );
+      const auto resolutionIt = levelToResMap.constFind( level );
+      if ( resolutionIt == levelToResMap.constEnd() || resolutionIt.value() <= 0 || targetRes <= 0 )
+        return;
+
+      const double resolution = resolutionIt.value();
 
       // Get necessary tiles to fill extent
       // tile_x = ox + i * (resolution * tileWidth)
@@ -1270,8 +1239,10 @@ void QgsAmsTiledImageDownloadHandler::repeatTileRequest( QNetworkRequest const &
     QgsMessageLog::logMessage( error, tr( "Network" ) );
     return;
   }
+#ifdef QGISDEBUG
   QgsDebugMsgLevel( u"repeat tileRequest %1 %2(retry %3) for url: %4"_s.arg( tileReqNo ).arg( tileNo ).arg( retry ).arg( url ), 2 );
   request.setAttribute( static_cast<QNetworkRequest::Attribute>( TileRetry ), retry );
+#endif
 
   QNetworkReply *reply = QgsNetworkAccessManager::instance()->get( request );
   mReplies << reply;
@@ -1286,6 +1257,11 @@ QgsAmsProviderMetadata::QgsAmsProviderMetadata()
 QIcon QgsAmsProviderMetadata::icon() const
 {
   return QgsApplication::getThemeIcon( u"mIconAms.svg"_s );
+}
+
+QgsProviderMetadata::ProviderCapabilities QgsAmsProviderMetadata::providerCapabilities() const
+{
+  return QgsProviderMetadata::ProviderCapability::ParallelCreateProvider;
 }
 
 QgsAmsProvider *QgsAmsProviderMetadata::createProvider( const QString &uri, const QgsDataProvider::ProviderOptions &options, Qgis::DataProviderReadFlags flags )

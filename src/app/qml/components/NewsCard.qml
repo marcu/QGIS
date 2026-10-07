@@ -12,7 +12,9 @@ Rectangle {
   property string description: ""
   property string imageSource: ""
   property string linkText: qsTr("Read more...")
+  
   property bool showCloseButton: false
+  property bool showLink: false
 
   signal readMoreClicked
   signal closeClicked
@@ -38,7 +40,7 @@ Rectangle {
     Text {
       Layout.fillWidth: true
       text: root.title
-      font.pointSize: Application.font.pointSize
+      font.pointSize: normalFontSize
       font.bold: true
       color: "#1a365d"
       wrapMode: Text.WordWrap
@@ -46,13 +48,14 @@ Rectangle {
 
     Text {
       Layout.fillWidth: true
-      text: root.description
-      font.pointSize: Application.font.pointSize * 0.8
+      textFormat: Text.RichText
+      text: '<style type="text/css">p:last-child { background-color:"red";margin:0; }</style>' + root.description
+      font.pointSize: tinyFontSize
       color: "#4a5568"
       wrapMode: Text.WordWrap
       lineHeight: 1.3
       linkColor: "#589632"
-      
+
       onLinkActivated: link => {
         Qt.openUrlExternally(link);
       }
@@ -60,8 +63,9 @@ Rectangle {
 
     Text {
       Layout.fillWidth: true
+      visible: root.showLink
       text: root.linkText
-      font.pointSize: Application.font.pointSize * 0.8
+      font.pointSize: tinyFontSize
       font.underline: mouseArea.containsMouse
       color: "#2b6cb0"
 

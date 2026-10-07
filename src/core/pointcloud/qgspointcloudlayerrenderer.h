@@ -25,6 +25,7 @@
 #include "qgsmapclippingregion.h"
 #include "qgsmaplayerrenderer.h"
 #include "qgspointcloudindex.h"
+#include "qgsrange.h"
 
 #include <QDomElement>
 #include <QElapsedTimer>
@@ -86,6 +87,8 @@ class CORE_EXPORT QgsPointCloudLayerRenderer : public QgsMapLayerRenderer
     double mZOffset = 0;
     double mZScale = 1.0;
 
+    QgsDoubleRange mMapCrsZFilter;
+
     QgsPointCloudAttributeCollection mLayerAttributes;
     QgsPointCloudAttributeCollection mAttributes;
     QgsGeometry mCloudExtent;
@@ -93,7 +96,7 @@ class CORE_EXPORT QgsPointCloudLayerRenderer : public QgsMapLayerRenderer
 
     bool mIsVpc = false;
     const QVector< QgsPointCloudSubIndex > mSubIndexes;
-    std::optional<QgsPointCloudIndex> mOverviewIndex;
+    QVector<QgsPointCloudIndex> mOverviewIndexes;
     double mAverageSubIndexWidth = 0;
     double mAverageSubIndexHeight = 0;
 

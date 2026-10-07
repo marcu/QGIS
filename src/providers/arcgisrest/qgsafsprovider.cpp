@@ -31,6 +31,7 @@
 #include "qgsreadwritelocker.h"
 #include "qgsrenderer.h"
 #include "qgsruntimeprofiler.h"
+#include "qgssymbolconverter.h"
 #include "qgsvariantutils.h"
 #include "qgsvectorlayerlabeling.h"
 
@@ -72,9 +73,11 @@ QgsAfsProvider::QgsAfsProvider( const QString &uri, const ProviderOptions &optio
   const bool isTable = layerData.value( u"type"_s ).toString().compare( "table"_L1, Qt::CaseInsensitive ) == 0;
   mLayerName = layerData[u"name"_s].toString();
   mLayerDescription = layerData[u"description"_s].toString();
-  mCapabilityStrings = layerData[u"capabilities"_s].toString().split( ',' );
+  mCapabilities = QgsArcGisRestUtils::serviceCapabilitiesFromString( layerData[u"capabilities"_s].toString() );
 
-  if ( mCapabilityStrings.contains( "update"_L1, Qt::CaseInsensitive ) )
+  mSharedData->mObjectIdFieldName = layerData[u"objectIdField"_s].toString();
+
+  if ( mCapabilities.testFlag( Qgis::ArcGisRestServiceCapability::Update ) )
   {
     // if the user has update capability, see if this extends to field definition modification
     QString adminUrl = mSharedData->mDataSource.param( u"url"_s );
@@ -96,7 +99,7 @@ QgsAfsProvider::QgsAfsProvider( const QString &uri, const ProviderOptions &optio
 
   mServerSupportsCurvedUpdates = layerData.value( u"allowTrueCurvesUpdates"_s, false ).toBool();
 
-  const bool useCurvedTypes = mServerSupportsCurvedUpdates || !mCapabilityStrings.contains( "update"_L1, Qt::CaseInsensitive );
+  const bool useCurvedTypes = mServerSupportsCurvedUpdates || !mCapabilities.testFlag( Qgis::ArcGisRestServiceCapability::Update );
   if ( !isTable )
   {
     // Set extent
@@ -166,8 +169,6 @@ QgsAfsProvider::QgsAfsProvider( const QString &uri, const ProviderOptions &optio
     }
   }
 
-  QString objectIdFieldName;
-
   // Read fields
   const QVariantList fields = layerData.value( u"fields"_s ).toList();
   for ( const QVariant &fieldData : fields )
@@ -182,9 +183,9 @@ QgsAfsProvider::QgsAfsProvider( const QString &uri, const ProviderOptions &optio
       // skip geometry field
       continue;
     }
-    if ( fieldTypeString == "esriFieldTypeOID"_L1 )
+    if ( mSharedData->mObjectIdFieldName.isEmpty() && fieldTypeString == "esriFieldTypeOID"_L1 )
     {
-      objectIdFieldName = fieldName;
+      mSharedData->mObjectIdFieldName = fieldName;
     }
     if ( type == QMetaType::Type::UnknownType )
     {
@@ -225,8 +226,25 @@ QgsAfsProvider::QgsAfsProvider( const QString &uri, const ProviderOptions &optio
 
     mSharedData->mFields.append( field );
   }
-  if ( objectIdFieldName.isEmpty() )
-    objectIdFieldName = u"objectid"_s;
+  if ( mSharedData->mObjectIdFieldName.isEmpty() )
+    mSharedData->mObjectIdFieldName = u"objectid"_s;
+
+  for ( int idx = 0, nIdx = mSharedData->mFields.count(); idx < nIdx; ++idx )
+  {
+    if ( mSharedData->mFields.at( idx ).name() == mSharedData->mObjectIdFieldName )
+    {
+      mSharedData->mObjectIdFieldIdx = idx;
+
+      // primary key is not null, unique
+      QgsFieldConstraints constraints = mSharedData->mFields.at( idx ).constraints();
+      constraints.setConstraint( QgsFieldConstraints::ConstraintNotNull, QgsFieldConstraints::ConstraintOriginProvider );
+      constraints.setConstraint( QgsFieldConstraints::ConstraintUnique, QgsFieldConstraints::ConstraintOriginProvider );
+      mSharedData->mFields[idx].setConstraints( constraints );
+      mSharedData->mFields[idx].setReadOnly( true );
+
+      break;
+    }
+  }
 
   if ( isTable )
   {
@@ -295,15 +313,6 @@ QgsAfsProvider::QgsAfsProvider( const QString &uri, const ProviderOptions &optio
   if ( profile )
     profile->switchTask( tr( "Retrieve object IDs" ) );
 
-  // Read OBJECTIDs of all features: these may not be a continuous sequence,
-  // and we need to store these to iterate through the features. This query
-  // also returns the name of the ObjectID field.
-  if ( !mSharedData->getObjectIds( errorMessage ) )
-  {
-    appendError( QgsErrorMessage( errorMessage, u"AFSProvider"_s ) );
-    return;
-  }
-
   // layer metadata
 
   mLayerMetadata.setIdentifier( mSharedData->mDataSource.param( u"url"_s ) );
@@ -328,7 +337,28 @@ QgsAfsProvider::QgsAfsProvider( const QString &uri, const ProviderOptions &optio
   const QVariant transparency = layerData.value( u"drawingInfo"_s ).toMap().value( u"transparency"_s );
   if ( transparency.isValid() )
   {
-    mRendererDataMap.insert( u"transparency"_s, transparency );
+    bool ok = false;
+    const double transparencyValue = transparency.toDouble( &ok );
+    if ( ok )
+      mRenderingSettings.setLayerOpacity( ( 100.0 - transparencyValue ) / 100.0 );
+  }
+
+  const QVariant minScale = layerData.value( u"minScale"_s );
+  if ( minScale.isValid() )
+  {
+    bool ok = false;
+    const double minScaleValue = minScale.toDouble( &ok );
+    if ( ok )
+      mRenderingSettings.setMinimumScale( minScaleValue );
+  }
+
+  const QVariant maxScale = layerData.value( u"maxScale"_s );
+  if ( maxScale.isValid() )
+  {
+    bool ok = false;
+    const double maxScaleValue = maxScale.toDouble( &ok );
+    if ( ok )
+      mRenderingSettings.setMaximumScale( maxScaleValue );
   }
 
   mValid = true;
@@ -351,7 +381,14 @@ Qgis::WkbType QgsAfsProvider::wkbType() const
 
 long long QgsAfsProvider::featureCount() const
 {
-  return mSharedData->featureCount();
+  QString error;
+  const long long result = mSharedData->featureCount( error );
+  if ( result < 0 )
+  {
+    pushError( error );
+    return static_cast< long long >( Qgis::FeatureCountState::UnknownCount );
+  }
+  return result;
 }
 
 QgsFields QgsAfsProvider::fields() const
@@ -366,7 +403,7 @@ QgsLayerMetadata QgsAfsProvider::layerMetadata() const
 
 bool QgsAfsProvider::deleteFeatures( const QgsFeatureIds &ids )
 {
-  if ( !mCapabilityStrings.contains( "delete"_L1, Qt::CaseInsensitive ) )
+  if ( !mCapabilities.testFlag( Qgis::ArcGisRestServiceCapability::Delete ) )
     return false;
 
   QString error;
@@ -382,7 +419,7 @@ bool QgsAfsProvider::deleteFeatures( const QgsFeatureIds &ids )
 
 bool QgsAfsProvider::addFeatures( QgsFeatureList &flist, Flags )
 {
-  if ( !mCapabilityStrings.contains( "create"_L1, Qt::CaseInsensitive ) )
+  if ( !mCapabilities.testFlag( Qgis::ArcGisRestServiceCapability::Create ) )
     return false;
 
   if ( flist.isEmpty() )
@@ -392,12 +429,13 @@ bool QgsAfsProvider::addFeatures( QgsFeatureList &flist, Flags )
   // field to QgsUnsetAttributeValue. This is required to maintain stable API which allowed
   // provider default value clause strings to be used as an alias for unset attributes.
   // TODO QGIS 5 - We can remove this when we no longer need to respect that.
+  const int objectIdFieldIndex = mSharedData->objectIdFieldIndex();
   for ( int i = 0; i < flist.size(); ++i )
   {
     QgsFeature &f = flist[i];
-    if ( mSharedData->mObjectIdFieldIdx >= 0 && f.attributes().size() > mSharedData->mObjectIdFieldIdx && f.attribute( mSharedData->mObjectIdFieldIdx ) == "Autogenerate"_L1 )
+    if ( objectIdFieldIndex >= 0 && f.attributes().size() > objectIdFieldIndex && f.attribute( objectIdFieldIndex ) == "Autogenerate"_L1 )
     {
-      f.setAttribute( mSharedData->mObjectIdFieldIdx, QgsUnsetAttributeValue() );
+      f.setAttribute( objectIdFieldIndex, QgsUnsetAttributeValue() );
     }
   }
 
@@ -414,7 +452,7 @@ bool QgsAfsProvider::addFeatures( QgsFeatureList &flist, Flags )
 
 bool QgsAfsProvider::changeAttributeValues( const QgsChangedAttributesMap &attrMap )
 {
-  if ( !mCapabilityStrings.contains( "update"_L1, Qt::CaseInsensitive ) )
+  if ( !mCapabilities.testFlag( Qgis::ArcGisRestServiceCapability::Update ) )
     return false;
 
   QgsFeatureIds ids;
@@ -432,7 +470,7 @@ bool QgsAfsProvider::changeAttributeValues( const QgsChangedAttributesMap &attrM
   QgsFeatureList updatedFeatures;
   updatedFeatures.reserve( attrMap.size() );
 
-  const int objectIdFieldIndex = mSharedData->mObjectIdFieldIdx;
+  const int objectIdFieldIndex = mSharedData->objectIdFieldIndex();
 
   while ( it.nextFeature( feature ) )
   {
@@ -463,11 +501,11 @@ bool QgsAfsProvider::changeAttributeValues( const QgsChangedAttributesMap &attrM
 
 bool QgsAfsProvider::changeGeometryValues( const QgsGeometryMap &geometryMap )
 {
-  if ( !mCapabilityStrings.contains( "update"_L1, Qt::CaseInsensitive ) )
+  if ( !mCapabilities.testFlag( Qgis::ArcGisRestServiceCapability::Update ) )
     return false;
 
   const QgsFields fields = mSharedData->mFields;
-  const int objectIdFieldIndex = mSharedData->mObjectIdFieldIdx;
+  const int objectIdFieldIndex = mSharedData->objectIdFieldIndex();
 
   QgsFeatureList updatedFeatures;
   updatedFeatures.reserve( geometryMap.size() );
@@ -480,7 +518,13 @@ bool QgsAfsProvider::changeGeometryValues( const QgsGeometryMap &geometryMap )
     QgsFeature feature( fields );
     feature.setId( id );
     // we ONLY require the objectId field set here
-    feature.setAttribute( objectIdFieldIndex, mSharedData->featureIdToObjectId( id ) );
+    QString error;
+    feature.setAttribute( objectIdFieldIndex, mSharedData->featureIdToObjectId( id, error ) );
+    if ( !error.isEmpty() )
+    {
+      pushError( tr( "Error while updating features: %1" ).arg( error ) );
+      return false;
+    }
     feature.setGeometry( it.value() );
 
     updatedFeatures.append( feature );
@@ -498,7 +542,7 @@ bool QgsAfsProvider::changeGeometryValues( const QgsGeometryMap &geometryMap )
 
 bool QgsAfsProvider::changeFeatures( const QgsChangedAttributesMap &attrMap, const QgsGeometryMap &geometryMap )
 {
-  if ( !mCapabilityStrings.contains( "update"_L1, Qt::CaseInsensitive ) )
+  if ( !mCapabilities.testFlag( Qgis::ArcGisRestServiceCapability::Update ) )
     return false;
 
   QgsFeatureIds ids;
@@ -520,7 +564,7 @@ bool QgsAfsProvider::changeFeatures( const QgsChangedAttributesMap &attrMap, con
 
   QgsFeatureList updatedFeatures;
   updatedFeatures.reserve( attrMap.size() );
-  const int objectIdFieldIndex = mSharedData->mObjectIdFieldIdx;
+  const int objectIdFieldIndex = mSharedData->objectIdFieldIndex();
 
   while ( it.nextFeature( feature ) )
   {
@@ -626,15 +670,15 @@ Qgis::VectorProviderCapabilities QgsAfsProvider::capabilities() const
   if ( mServerSupportsCurvedUpdates )
     c |= Qgis::VectorProviderCapability::CircularGeometries;
 
-  if ( mCapabilityStrings.contains( "delete"_L1, Qt::CaseInsensitive ) )
+  if ( mCapabilities.testFlag( Qgis::ArcGisRestServiceCapability::Delete ) )
   {
     c |= Qgis::VectorProviderCapability::DeleteFeatures;
   }
-  if ( mCapabilityStrings.contains( "create"_L1, Qt::CaseInsensitive ) )
+  if ( mCapabilities.testFlag( Qgis::ArcGisRestServiceCapability::Create ) )
   {
     c |= Qgis::VectorProviderCapability::AddFeatures;
   }
-  if ( mCapabilityStrings.contains( "update"_L1, Qt::CaseInsensitive ) )
+  if ( mCapabilities.testFlag( Qgis::ArcGisRestServiceCapability::Update ) )
   {
     c |= Qgis::VectorProviderCapability::ChangeAttributeValues;
     c |= Qgis::VectorProviderCapability::ChangeFeatures;
@@ -656,19 +700,19 @@ Qgis::VectorProviderCapabilities QgsAfsProvider::capabilities() const
 
 QgsAttributeList QgsAfsProvider::pkAttributeIndexes() const
 {
-  return QgsAttributeList() << mSharedData->mObjectIdFieldIdx;
+  return QgsAttributeList() << mSharedData->objectIdFieldIndex();
 }
 
 QString QgsAfsProvider::defaultValueClause( int fieldId ) const
 {
-  if ( fieldId == mSharedData->mObjectIdFieldIdx )
+  if ( fieldId == mSharedData->objectIdFieldIndex() )
     return u"Autogenerate"_s;
   return QString();
 }
 
 bool QgsAfsProvider::skipConstraintCheck( int fieldIndex, QgsFieldConstraints::Constraint, const QVariant &value ) const
 {
-  return fieldIndex == mSharedData->mObjectIdFieldIdx && ( QgsVariantUtils::isUnsetAttributeValue( value ) || value.toString() == "Autogenerate"_L1 );
+  return fieldIndex == mSharedData->objectIdFieldIndex() && ( QgsVariantUtils::isUnsetAttributeValue( value ) || value.toString() == "Autogenerate"_L1 );
 }
 
 QString QgsAfsProvider::subsetString() const
@@ -764,12 +808,19 @@ void QgsAfsProvider::reloadProviderData()
 
 QgsFeatureRenderer *QgsAfsProvider::createRenderer( const QVariantMap & ) const
 {
-  return QgsArcGisRestUtils::convertRenderer( mRendererDataMap ).release();
+  QgsReadWriteContext rwContext;
+  QgsSymbolConverterContext context( rwContext );
+  return QgsArcGisRestUtils::convertRenderer( mRendererDataMap, context ).release();
 }
 
 QgsAbstractVectorLayerLabeling *QgsAfsProvider::createLabeling( const QVariantMap & ) const
 {
   return QgsArcGisRestUtils::convertLabeling( mLabelingDataList ).release();
+}
+
+const QgsLayerRenderingSettings *QgsAfsProvider::renderingSettings( const QVariantMap & ) const
+{
+  return &mRenderingSettings;
 }
 
 bool QgsAfsProvider::renderInPreview( const QgsDataProvider::PreviewContext & )
@@ -787,6 +838,11 @@ QgsAfsProviderMetadata::QgsAfsProviderMetadata()
 QIcon QgsAfsProviderMetadata::icon() const
 {
   return QgsApplication::getThemeIcon( u"mIconAfs.svg"_s );
+}
+
+QgsProviderMetadata::ProviderCapabilities QgsAfsProviderMetadata::providerCapabilities() const
+{
+  return QgsProviderMetadata::ProviderCapability::ParallelCreateProvider;
 }
 
 QList<QgsDataItemProvider *> QgsAfsProviderMetadata::dataItemProviders() const

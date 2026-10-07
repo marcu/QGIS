@@ -26,12 +26,19 @@
 
 using namespace Qt::StringLiterals;
 
-QgsLayoutChartSeriesDetailsWidget::QgsLayoutChartSeriesDetailsWidget( QgsVectorLayer *layer, int index, const QgsLayoutItemChart::SeriesDetails &seriesDetails, QWidget *parent )
+QgsLayoutChartSeriesDetailsWidget::QgsLayoutChartSeriesDetailsWidget( QgsVectorLayer *layer, int index, const QgsLayoutItemChart::SeriesDetails &seriesDetails, bool yAxisOnly, QWidget *parent )
   : QgsPanelWidget( parent )
   , mVectorLayer( layer )
   , mIndex( index )
+  , mYAxisOnly( yAxisOnly )
 {
   setupUi( this );
+
+  if ( mYAxisOnly )
+  {
+    mXExpressionWidget->setVisible( false );
+    xExpressionLabel->setVisible( false );
+  }
 
   if ( mVectorLayer )
   {
@@ -46,12 +53,12 @@ QgsLayoutChartSeriesDetailsWidget::QgsLayoutChartSeriesDetailsWidget( QgsVectorL
   mFilterLineEdit->setText( seriesDetails.filterExpression() );
 
   connect( mXExpressionWidget, static_cast<void ( QgsFieldExpressionWidget::* )( const QString &, bool )>( &QgsFieldExpressionWidget::fieldChanged ), this, [this]( const QString &, bool ) {
-    emit widgetChanged();
+    emit changed();
   } );
   connect( mYExpressionWidget, static_cast<void ( QgsFieldExpressionWidget::* )( const QString &, bool )>( &QgsFieldExpressionWidget::fieldChanged ), this, [this]( const QString &, bool ) {
-    emit widgetChanged();
+    emit changed();
   } );
-  connect( mFilterLineEdit, &QLineEdit::textChanged, this, [this] { emit widgetChanged(); } );
+  connect( mFilterLineEdit, &QLineEdit::textChanged, this, [this] { emit changed(); } );
   connect( mFilterButton, &QToolButton::clicked, this, &QgsLayoutChartSeriesDetailsWidget::mFilterButton_clicked );
 }
 

@@ -63,7 +63,26 @@ class QgsSymbolLayerId;
 class CORE_EXPORT QgsSymbolLayerUtils
 {
   public:
+    /**
+     * Lossy-encodes a \a color to a string.
+     *
+     * \warning Use of this method is discouraged, as it loses color precision and does not handle
+     * non-RGB color values losslessly. Use QgsColorUtils::colorToString() instead.
+     *
+     * \see decodeColor()
+     * \see QgsColorUtils::colorToString()
+    */
     static QString encodeColor( const QColor &color );
+
+    /**
+     * Decodes a string to a color.
+     *
+     * \warning Use of this method is discouraged, as it handles only colors lossy-encoded using
+     * encodeColor(). Use QgsColorUtils::colorFromString() instead.
+     *
+     * \see encodeColor()
+     * \see QgsColorUtils::colorFromString()
+     */
     static QColor decodeColor( const QString &str );
 
     static QString encodeSldAlpha( int alpha );
@@ -419,19 +438,7 @@ class CORE_EXPORT QgsSymbolLayerUtils
      */
     template<class SymbolType> static std::unique_ptr< SymbolType > loadSymbol( const QDomElement &element, const QgsReadWriteContext &context ) SIP_SKIP
     {
-      std::unique_ptr< QgsSymbol > tmpSymbol = QgsSymbolLayerUtils::loadSymbol( element, context );
-      const bool canCast = dynamic_cast<SymbolType *>( tmpSymbol.get() );
-
-      if ( canCast )
-      {
-        std::unique_ptr< SymbolType > castRes( static_cast<SymbolType *>( tmpSymbol.release() ) );
-        return castRes;
-      }
-      else
-      {
-        //could not cast
-        return nullptr;
-      }
+      return qgis::unique_ptr_dynamic_cast<SymbolType>( QgsSymbolLayerUtils::loadSymbol( element, context ) );
     }
 
     //! Reads and returns symbol layer from XML. Caller is responsible for deleting the returned object
@@ -759,7 +766,7 @@ class CORE_EXPORT QgsSymbolLayerUtils
      * can be paste in places where a color is expected.
      * \see symbolFromMimeData()
      */
-    static QMimeData *symbolToMimeData( const QgsSymbol *symbol ) SIP_FACTORY;
+    static std::unique_ptr<QMimeData> symbolToMimeData( const QgsSymbol *symbol );
 
     /**
      * Attempts to parse \a mime data as a symbol. A new symbol instance will be returned
@@ -823,7 +830,7 @@ class CORE_EXPORT QgsSymbolLayerUtils
      * \param color color to encode as mime data
      * \see colorFromMimeData
      */
-    static QMimeData *colorToMimeData( const QColor &color ) SIP_FACTORY;
+    static std::unique_ptr<QMimeData> colorToMimeData( const QColor &color );
 
     /**
      * Attempts to parse mime data as a color
@@ -847,7 +854,7 @@ class CORE_EXPORT QgsSymbolLayerUtils
      * \param allFormats set to TRUE to include additional mime formats, include text/plain and application/x-color
      * \returns mime data containing encoded colors
      */
-    static QMimeData *colorListToMimeData( const QgsNamedColorList &colorList, bool allFormats = true ) SIP_FACTORY;
+    static std::unique_ptr<QMimeData> colorListToMimeData( const QgsNamedColorList &colorList, bool allFormats = true );
 
     /**
      * Exports colors to a gpl GIMP palette file
@@ -1195,6 +1202,55 @@ class CORE_EXPORT QgsSymbolLayerUtils
         + ( !qgsDoubleNear( scaleFactorY, 0.0 ) ? "tostring(" + QString::number( scaleFactorY ) + "*(" + exprString + "))" : u"'0'"_s )
       );
     }
+
+    /**
+     * Blank segments are used to defined segments of marker/hash line symbol layer where markers/hashes
+     * are not displayed.
+     *
+     * A blank segment is represented by a pair of start and end distance expressed in a user selected unit
+     *
+     * \since QGIS 4.0
+     */
+    typedef QList<QPair<double, double>> BlankSegments;
+
+    /**
+     * Parse blank segments string representation \a strBlankSegments
+     *
+     * Blank segments format is expected to be in the form (((2.90402 7.36,11.8776 30.4499),()),((2 7))) with 3 levels
+     * of parenthesis like MultiPolygon to deal with multi parts and inner rings. Empty opening-closing parenthesis are allowed
+     * to define the lack of blank segments for some multi part or inner rings.
+     *
+     * The blank segments are expected to be expressed in \a unit and converted in pixels regarding render context \a renderContext
+     * \a error is populated with a descritive message if the string representation is not well formatted
+     * Returns a list of start and end distance expressed in pixels for each part and rings
+     *
+     * \since QGIS 4.0
+     */
+    static QList<QList<BlankSegments>> parseBlankSegments( const QString &strBlankSegments, const QgsRenderContext &renderContext, Qgis::RenderUnit unit, QString &error );
+
+    /**
+     * Extra items are used to draw extra markers or hashes at given position when rendering
+     * a marker or hash line symbol layer.
+     *
+     * An extra item is represented by a pair of a position in layer unit and a rotation in degree.
+     *
+     * \since QGIS 4.2
+     */
+    typedef QList<std::pair<QPointF, double>> ExtraItems;
+
+    /**
+       * Parse extra items string representation \a strExtraItems
+       *
+       * Extra items format is expected to be in the form "2.5 4.5 8.1,2 7 0, 4 8 12" where each
+       * triplet represent respectively X, Y, Angle where X,Y is the extra item position expressed in its layer CRS unit,
+       * and Angle is the item rotation angle in degree
+       *
+       * Returns a list of extra items
+       *
+       * \since QGIS 4.2
+       */
+    static ExtraItems parseExtraItems( const QString &strExtraItems, QString &error );
+
 #endif
     ///@endcond
 };

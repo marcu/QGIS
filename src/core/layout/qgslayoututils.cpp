@@ -21,10 +21,10 @@
 
 #include "qgslayout.h"
 #include "qgslayoutitemmap.h"
+#include "qgslayoutitempicture.h"
 #include "qgslayoutrendercontext.h"
 #include "qgsprojectviewsettings.h"
 #include "qgsrendercontext.h"
-#include "qgssettings.h"
 #include "qgssettingsregistrycore.h"
 
 #include <QPainter>
@@ -491,7 +491,7 @@ bool QgsLayoutUtils::itemIsAClippingSource( const QgsLayoutItem *item )
   if ( !( item->itemFlags() & QgsLayoutItem::FlagProvidesClipPath ) )
     return false; // not a clipping provider, so shortcut out
 
-  // current only maps can be clipped
+  // maps
   QList< QgsLayoutItemMap * > maps;
   item->layout()->layoutItems( maps );
   for ( QgsLayoutItemMap *map : std::as_const( maps ) )
@@ -499,19 +499,31 @@ bool QgsLayoutUtils::itemIsAClippingSource( const QgsLayoutItem *item )
     if ( map->itemClippingSettings()->isActive() && map->itemClippingSettings()->sourceItem() == item )
       return true;
   }
+
+  // pictures
+  QList< QgsLayoutItemPicture * > pictures;
+  item->layout()->layoutItems( pictures );
+  for ( QgsLayoutItemPicture *picture : std::as_const( pictures ) )
+  {
+    if ( picture->clipToItem() && picture->clippingItem() == item )
+      return true;
+  }
+
   return false;
 }
+
+constexpr double pointToMM = 25.4 / 72.0;
 
 double QgsLayoutUtils::pointsToMM( const double pointSize )
 {
   //conversion to mm based on 1 point = 1/72 inch
-  return ( pointSize * 0.3527 );
+  return ( pointSize * pointToMM );
 }
 
 double QgsLayoutUtils::mmToPoints( const double mmSize )
 {
   //conversion to points based on 1 point = 1/72 inch
-  return ( mmSize / 0.3527 );
+  return ( mmSize / pointToMM );
 }
 
 QVector< double > QgsLayoutUtils::predefinedScales( const QgsLayout *layout )
@@ -525,7 +537,6 @@ QVector< double > QgsLayoutUtils::predefinedScales( const QgsLayout *layout )
   if ( !hasProjectScales || mapScales.isEmpty() )
   {
     // default to global map tool scales
-    QgsSettings settings;
     const QStringList scales = QgsSettingsRegistryCore::settingsMapScales->value();
     for ( const QString &scale : scales )
     {

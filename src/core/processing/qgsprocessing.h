@@ -120,6 +120,20 @@ class CORE_EXPORT QgsProcessing
      */
     static const QString TEMPORARY_OUTPUT;
 
+    /**
+     * Constant used for the model provider's ID.
+     *
+     * \since QGIS 4.4
+     */
+    static const QString MODEL_PROVIDER_ID;
+
+    /**
+     * Constant used for the project model provider's ID.
+     *
+     * \since QGIS 4.4
+     */
+    static const QString PROJECT_PROVIDER_ID;
+
 #ifndef SIP_RUN
     static inline QgsSettingsTreeNode *sTreeConfiguration = QgsSettingsTree::sTreeQgis->createChildNode( u"configuration"_s );
 
@@ -131,6 +145,8 @@ class CORE_EXPORT QgsProcessing
     static const QgsSettingsEntryString *settingsDefaultOutputVectorLayerExt;
     //! Settings entry default output raster layer format
     static const QgsSettingsEntryString *settingsDefaultOutputRasterLayerFormat;
+    //! Settings entry default GUI parameter value (per algorithm id and parameter name)
+    static const QgsSettingsEntryVariant *settingsDefaultGuiParam;
 #endif
 };
 

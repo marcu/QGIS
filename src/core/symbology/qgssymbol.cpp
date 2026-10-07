@@ -811,7 +811,7 @@ void QgsSymbol::setAnimationSettings( const QgsSymbolAnimationSettings &settings
   mAnimationSettings = settings;
 }
 
-QgsSymbol *QgsSymbol::defaultSymbol( Qgis::GeometryType geomType )
+std::unique_ptr<QgsSymbol> QgsSymbol::defaultSymbol( Qgis::GeometryType geomType )
 {
   std::unique_ptr< QgsSymbol > s;
 
@@ -873,7 +873,7 @@ QgsSymbol *QgsSymbol::defaultSymbol( Qgis::GeometryType geomType )
     s->setColor( s->color().toRgb() );
   }
 
-  return s.release();
+  return s;
 }
 
 QgsSymbolLayer *QgsSymbol::symbolLayer( int layer )
@@ -1223,7 +1223,7 @@ void QgsSymbol::drawPreviewIcon(
         break;
     }
 
-    const QgsGeometry bufferedGeometry = renderedShape.buffer( bufferSize, 8, Qgis::EndCapStyle::Round, joinStyle, 2 );
+    const QgsGeometry bufferedGeometry = renderedShape.buffer( bufferSize, 8, Qgis::EndCapStyle::Round, joinStyle, 2, context->feedback() );
     const QList<QList<QPolygonF> > polygons = QgsSymbolLayerUtils::toQPolygonF( bufferedGeometry, Qgis::SymbolType::Fill );
 
     mBufferSettings->fillSymbol()->startRender( *context );
@@ -1721,6 +1721,25 @@ void QgsSymbol::renderFeature(
         // no segmentation required
         processedGeometry = part;
       }
+      // clip geometry to render context clipping regions
+      if ( !context.featureClipGeometry().isEmpty() )
+      {
+        // apply feature clipping from context to the rendered geometry only -- just like the render time simplification,
+        // we should NEVER apply this to the geometry attached to the feature itself. Doing so causes issues with certain
+        // renderer settings, e.g. if polygons are being rendered using a rule based renderer based on the feature's area,
+        // then we need to ensure that the original feature area is used instead of the clipped area..
+        QgsGeos geos( processedGeometry );
+        std::unique_ptr< QgsAbstractGeometry > clippedGeom( geos.intersection( context.featureClipGeometry().constGet(), nullptr, QgsGeometryParameters(), context.feedback() ) );
+        if ( clippedGeom )
+        {
+          temporaryGeometryContainer.set( clippedGeom.release() );
+          processedGeometry = temporaryGeometryContainer.constGet();
+        }
+        else
+        {
+          return;
+        }
+      }
 
       // Simplify the geometry, if needed.
       if ( context.vectorSimplifyMethod().forceLocalOptimization() )
@@ -1732,22 +1751,6 @@ void QgsSymbol::renderFeature(
         if ( simplified )
         {
           temporaryGeometryContainer.set( simplified.release() );
-          processedGeometry = temporaryGeometryContainer.constGet();
-        }
-      }
-
-      // clip geometry to render context clipping regions
-      if ( !context.featureClipGeometry().isEmpty() )
-      {
-        // apply feature clipping from context to the rendered geometry only -- just like the render time simplification,
-        // we should NEVER apply this to the geometry attached to the feature itself. Doing so causes issues with certain
-        // renderer settings, e.g. if polygons are being rendered using a rule based renderer based on the feature's area,
-        // then we need to ensure that the original feature area is used instead of the clipped area..
-        QgsGeos geos( processedGeometry );
-        std::unique_ptr< QgsAbstractGeometry > clippedGeom( geos.intersection( context.featureClipGeometry().constGet() ) );
-        if ( clippedGeom )
-        {
-          temporaryGeometryContainer.set( clippedGeom.release() );
           processedGeometry = temporaryGeometryContainer.constGet();
         }
       }
@@ -1772,6 +1775,12 @@ void QgsSymbol::renderFeature(
         if ( mType != Qgis::SymbolType::Marker )
         {
           QgsDebugMsgLevel( u"point can be drawn only with marker symbol!"_s, 2 );
+          break;
+        }
+
+        if ( processedGeometry->isEmpty() )
+        {
+          // point was clipped away entirely by the render context's feature clip geometry
           break;
         }
 
@@ -2135,7 +2144,7 @@ void QgsSymbol::renderFeature(
         break;
     }
 
-    const QgsGeometry bufferedGeometry = renderedShape.buffer( bufferSize, 8, Qgis::EndCapStyle::Round, joinStyle, 2 );
+    const QgsGeometry bufferedGeometry = renderedShape.buffer( bufferSize, 8, Qgis::EndCapStyle::Round, joinStyle, 2, context.feedback() );
     const QList<QList<QPolygonF> > polygons = QgsSymbolLayerUtils::toQPolygonF( bufferedGeometry, Qgis::SymbolType::Fill );
     for ( const QList< QPolygonF > &polygon : polygons )
     {
@@ -2241,10 +2250,12 @@ void QgsSymbol::renderFeature(
 
   if ( drawVertexMarker )
   {
+    // vertex markers should ignore symbology reference scale
+    QgsScopedRenderContextReferenceScaleOverride overrideReferenceScale( context, -1 );
+
     if ( !markers.isEmpty() && !context.renderingStopped() )
     {
-      const auto constMarkers = markers;
-      for ( QPointF marker : constMarkers )
+      for ( QPointF marker : std::as_const( markers ) )
       {
         renderVertexMarker( marker, context, currentVertexMarkerType, currentVertexMarkerSize );
       }

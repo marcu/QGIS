@@ -30,7 +30,7 @@ using namespace Qt::StringLiterals;
 
 QgsPointCloudAttributeByRampRenderer::QgsPointCloudAttributeByRampRenderer()
 {
-  mColorRampShader.setSourceColorRamp( QgsStyle::defaultStyle()->colorRamp( u"Viridis"_s ) );
+  mColorRampShader.setSourceColorRamp( QgsStyle::defaultStyle()->colorRamp( u"Viridis"_s ).release() );
   mColorRampShader.classifyColorRamp( 5, -1, QgsRectangle(), nullptr );
 }
 
@@ -75,7 +75,7 @@ void QgsPointCloudAttributeByRampRenderer::renderBlock( const QgsPointCloudBlock
 
   const bool renderElevation = context.renderContext().elevationMap();
   const QgsDoubleRange zRange = context.renderContext().zRange();
-  const bool considerZ = !zRange.isInfinite() || renderElevation;
+  const bool considerZ = !zRange.isInfinite() || renderElevation || !context.mapCrsZFilter().isInfinite();
 
   const bool applyZOffset = attribute->name() == "Z"_L1;
   const bool applyXOffset = attribute->name() == "X"_L1;
@@ -92,6 +92,8 @@ void QgsPointCloudAttributeByRampRenderer::renderBlock( const QgsPointCloudBlock
   int green = 0;
   int blue = 0;
   int alpha = 0;
+
+  bool dataDefinedPropertiesActive = dataDefinedProperties().isActive( QgsPointCloudRenderer::Property::Color );
   for ( int i = 0; i < count; ++i )
   {
     if ( context.renderContext().renderingStopped() )
@@ -122,6 +124,9 @@ void QgsPointCloudAttributeByRampRenderer::renderBlock( const QgsPointCloudBlock
         }
       }
 
+      if ( !context.mapCrsZFilter().contains( z ) )
+        continue;
+
       double attributeValue = 0;
       context.getAttribute( ptr, i * recordSize + attributeOffset, attributeType, attributeValue );
 
@@ -134,16 +139,20 @@ void QgsPointCloudAttributeByRampRenderer::renderBlock( const QgsPointCloudBlock
 
       mColorRampShader.shade( attributeValue, &red, &green, &blue, &alpha );
 
+      QColor color( red, green, blue, alpha );
+      if ( dataDefinedPropertiesActive )
+        color = colorFromExpression( block, i, color, context );
+
       if ( renderAsTriangles() )
       {
-        addPointToTriangulation( x, y, z, QColor( red, green, blue, alpha ), context );
+        addPointToTriangulation( x, y, z, color, context );
 
         // We don't want to render any points if we're rendering triangles and there is no preview painter
         if ( !context.renderContext().previewRenderPainter() )
           continue;
       }
 
-      drawPoint( x, y, QColor( red, green, blue, alpha ), context );
+      drawPoint( x, y, color, context );
       if ( renderElevation )
         drawPointToElevationMap( x, y, z, context );
 
@@ -189,9 +198,9 @@ QDomElement QgsPointCloudAttributeByRampRenderer::save( QDomDocument &doc, const
   return rendererElem;
 }
 
-QSet<QString> QgsPointCloudAttributeByRampRenderer::usedAttributes( const QgsPointCloudRenderContext & ) const
+QSet<QString> QgsPointCloudAttributeByRampRenderer::usedAttributes( const QgsPointCloudRenderContext &context ) const
 {
-  QSet<QString> res;
+  QSet<QString> res = QgsPointCloudRenderer::usedAttributes( context );
   res << mAttribute;
   return res;
 }

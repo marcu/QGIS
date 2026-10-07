@@ -76,6 +76,7 @@ bool formatterCanProvideAvailableValues( QgsVectorLayer *layer, const QString &f
 
 QgsExpressionBuilderWidget::QgsExpressionBuilderWidget( QWidget *parent )
   : QWidget( parent )
+  , mExpressionTreeMenuProvider( this )
   , mProject( QgsProject::instance() )
 {
   setupUi( this );
@@ -113,8 +114,7 @@ QgsExpressionBuilderWidget::QgsExpressionBuilderWidget( QWidget *parent )
   connect( mExpressionTreeView, &QgsExpressionTreeView::expressionItemDoubleClicked, this, &QgsExpressionBuilderWidget::insertExpressionText );
   connect( mExpressionTreeView, &QgsExpressionTreeView::currentExpressionItemChanged, this, &QgsExpressionBuilderWidget::expressionTreeItemChanged );
 
-  mExpressionTreeMenuProvider = new ExpressionTreeMenuProvider( this );
-  mExpressionTreeView->setMenuProvider( mExpressionTreeMenuProvider );
+  mExpressionTreeView->setMenuProvider( &mExpressionTreeMenuProvider );
 
   txtHelpText->setOpenExternalLinks( true );
   mValueGroupBox->hide();
@@ -242,6 +242,8 @@ QgsExpressionBuilderWidget::QgsExpressionBuilderWidget( QWidget *parent )
  : param params_as_list : Set this to True to pass the function parameters as a list. Can be used to mimic \n\
                         behavior before 3.32, when args was not \"auto\". Defaults to False.\n\
 \"\"\"" ) );
+
+  txtExpressionString->setFocus();
 }
 
 
@@ -251,7 +253,6 @@ QgsExpressionBuilderWidget::~QgsExpressionBuilderWidget()
   settings.setValue( u"Windows/QgsExpressionBuilderWidget/splitter"_s, splitter->saveState() );
   settings.setValue( u"Windows/QgsExpressionBuilderWidget/editorsplitter"_s, editorSplit->saveState() );
   settings.setValue( u"Windows/QgsExpressionBuilderWidget/functionsplitter"_s, functionsplit->saveState() );
-  delete mExpressionTreeMenuProvider;
 }
 
 void QgsExpressionBuilderWidget::init( const QgsExpressionContext &context, const QString &recentCollection, QgsExpressionBuilderWidget::Flags flags )
@@ -836,12 +837,6 @@ void QgsExpressionBuilderWidget::setProject( QgsProject *project )
 {
   mProject = project;
   mExpressionTreeView->setProject( project );
-}
-
-void QgsExpressionBuilderWidget::showEvent( QShowEvent *e )
-{
-  QWidget::showEvent( e );
-  txtExpressionString->setFocus();
 }
 
 void QgsExpressionBuilderWidget::createErrorMarkers( const QList<QgsExpression::ParserError> &errors )

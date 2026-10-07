@@ -25,6 +25,8 @@
 #include "qgseventtracing.h"
 #include "qgsgeotransform.h"
 #include "qgsglobematerial.h"
+#include "qgsglobeutils_p.h"
+#include "qgsmaterial3dhandler.h"
 #include "qgsray3d.h"
 #include "qgsraycastcontext.h"
 #include "qgsraycastingutils.h"
@@ -49,7 +51,16 @@ using namespace Qt::StringLiterals;
 ///@cond PRIVATE
 
 static Qt3DCore::QEntity *makeGlobeMesh(
-  double lonMin, double lonMax, double latMin, double latMax, int lonSliceCount, int latSliceCount, const QgsCoordinateTransform &globeCrsToLatLon, QImage textureQImage, QString textureDebugText
+  double lonMin,
+  double lonMax,
+  double latMin,
+  double latMax,
+  int lonSliceCount,
+  int latSliceCount,
+  const QgsCoordinateTransform &globeCrsToLatLon,
+  QImage textureQImage,
+  QString textureDebugText,
+  const QgsMaterialContext &context
 )
 {
   double lonRange = lonMax - lonMin;
@@ -189,9 +200,9 @@ static Qt3DCore::QEntity *makeGlobeMesh(
   QgsTerrainTextureImage *textureImage = new QgsTerrainTextureImage( textureQImage, QgsRectangle( lonMin, latMin, lonMax, latMax ), textureDebugText, entity );
 
   Qt3DRender::QTexture2D *texture = new Qt3DRender::QTexture2D( entity );
+  Qgs3DUtils::setTextureFiltering( texture, context );
   texture->addTextureImage( textureImage );
-  texture->setMinificationFilter( Qt3DRender::QTexture2D::Linear );
-  texture->setMagnificationFilter( Qt3DRender::QTexture2D::Linear );
+  texture->setFormat( Qt3DRender::QAbstractTexture::SRGB8_Alpha8 );
 
   QgsGlobeMaterial *material = new QgsGlobeMaterial( entity );
   material->setTexture( texture );
@@ -206,65 +217,12 @@ static Qt3DCore::QEntity *makeGlobeMesh(
 }
 
 
-static void globeNodeIdToLatLon( QgsChunkNodeId n, double &latMin, double &latMax, double &lonMin, double &lonMax )
-{
-  if ( n == QgsChunkNodeId( 0, 0, 0, 0 ) )
-  {
-    latMin = -90;
-    lonMin = -180;
-    latMax = 90;
-    lonMax = 180;
-    return;
-  }
-
-  double tileSize = 180.0 / std::pow( 2.0, n.d - 1 );
-  lonMin = n.x * tileSize - 180.0;
-  latMin = n.y * tileSize - 90.0;
-  lonMax = lonMin + tileSize;
-  latMax = latMin + tileSize;
-}
-
-
-static QgsBox3D globeNodeIdToBox3D( QgsChunkNodeId n, const QgsCoordinateTransform &globeCrsToLatLon )
-{
-  double latMin, latMax, lonMin, lonMax;
-  globeNodeIdToLatLon( n, latMin, latMax, lonMin, lonMax );
-
-  Q_ASSERT( latMax - latMin <= 90 && lonMax - lonMin <= 90 ); // for larger extents we would need more points than just corners
-
-  QVector<double> x, y, z;
-  int pointCount = 4;
-  x.reserve( pointCount );
-  y.reserve( pointCount );
-  z.reserve( pointCount );
-
-  x.push_back( lonMin );
-  y.push_back( latMin );
-  z.push_back( 0 );
-  x.push_back( lonMin );
-  y.push_back( latMax );
-  z.push_back( 0 );
-  x.push_back( lonMax );
-  y.push_back( latMin );
-  z.push_back( 0 );
-  x.push_back( lonMax );
-  y.push_back( latMax );
-  z.push_back( 0 );
-
-  globeCrsToLatLon.transformCoords( pointCount, x.data(), y.data(), z.data(), Qgis::TransformDirection::Reverse );
-
-  QgsBox3D box( QgsVector3D( x[0], y[0], z[0] ), QgsVector3D( x[1], y[1], z[1] ) );
-  box.combineWith( x[2], y[2], z[2] );
-  box.combineWith( x[3], y[3], z[3] );
-  return box;
-}
-
-
 // ---------------
 
 
-QgsGlobeChunkLoader::QgsGlobeChunkLoader( QgsChunkNode *node, QgsTerrainTextureGenerator *textureGenerator, const QgsCoordinateTransform &globeCrsToLatLon )
+QgsGlobeChunkLoader::QgsGlobeChunkLoader( QgsChunkNode *node, const Qgs3DRenderContext &context, QgsTerrainTextureGenerator *textureGenerator, const QgsCoordinateTransform &globeCrsToLatLon )
   : QgsChunkLoader( node )
+  , mRenderContext( context )
   , mTextureGenerator( textureGenerator )
   , mGlobeCrsToLatLon( globeCrsToLatLon )
 {}
@@ -281,9 +239,7 @@ void QgsGlobeChunkLoader::start()
     }
   } );
 
-  double latMin, latMax, lonMin, lonMax;
-  globeNodeIdToLatLon( node->tileId(), latMin, latMax, lonMin, lonMax );
-  QgsRectangle extent( lonMin, latMin, lonMax, latMax );
+  const QgsRectangle extent = QgsGlobeUtils::nodeIdToLonLatRect( node->tileId() );
   mJobId = mTextureGenerator->render( extent, node->tileId(), node->tileId().text() );
 }
 
@@ -294,8 +250,7 @@ Qt3DCore::QEntity *QgsGlobeChunkLoader::createEntity( Qt3DCore::QEntity *parent 
     return new Qt3DCore::QEntity( parent );
   }
 
-  double latMin, latMax, lonMin, lonMax;
-  globeNodeIdToLatLon( mNode->tileId(), latMin, latMax, lonMin, lonMax );
+  const QgsRectangle extent = QgsGlobeUtils::nodeIdToLonLatRect( mNode->tileId() );
 
   // This is quite ad-hoc estimation how many slices we need. It could
   // be improved by basing the calculation on sagitta
@@ -310,7 +265,9 @@ Qt3DCore::QEntity *QgsGlobeChunkLoader::createEntity( Qt3DCore::QEntity *parent 
   else
     slices = 2;
 
-  Qt3DCore::QEntity *e = makeGlobeMesh( lonMin, lonMax, latMin, latMax, slices, slices, mGlobeCrsToLatLon, mTexture, mNode->tileId().text() );
+  QgsMaterialContext materialContext = QgsMaterialContext::fromRenderContext( mRenderContext );
+
+  Qt3DCore::QEntity *e = makeGlobeMesh( extent.xMinimum(), extent.xMaximum(), extent.yMinimum(), extent.yMaximum(), slices, slices, mGlobeCrsToLatLon, mTexture, mNode->tileId().text(), materialContext );
   e->setParent( parent );
   return e;
 }
@@ -322,33 +279,30 @@ Qt3DCore::QEntity *QgsGlobeChunkLoader::createEntity( Qt3DCore::QEntity *parent 
 QgsGlobeChunkLoaderFactory::QgsGlobeChunkLoaderFactory( Qgs3DMapSettings *mapSettings )
   : mMapSettings( mapSettings )
 {
-  mTextureGenerator = new QgsTerrainTextureGenerator( *mapSettings );
+  mTextureGenerator = std::make_unique<QgsTerrainTextureGenerator>( *mapSettings );
 
   // it does not matter what kind of ellipsoid is used, this is for rough estimates
   mDistanceArea.setEllipsoid( mapSettings->crs().ellipsoidAcronym() );
 
   mGlobeCrsToLatLon = QgsCoordinateTransform( mapSettings->crs(), mapSettings->crs().toGeographicCrs(), mapSettings->transformContext() );
 
-  mRadiusX = mGlobeCrsToLatLon.transform( QgsVector3D( 0, 0, 0 ), Qgis::TransformDirection::Reverse ).x();
-  mRadiusY = mGlobeCrsToLatLon.transform( QgsVector3D( 90, 0, 0 ), Qgis::TransformDirection::Reverse ).y();
-  mRadiusZ = mGlobeCrsToLatLon.transform( QgsVector3D( 0, 90, 0 ), Qgis::TransformDirection::Reverse ).z();
+  mRadius = QgsGlobeUtils::ellipsoidRadius( mGlobeCrsToLatLon );
 }
 
 QgsGlobeChunkLoaderFactory::~QgsGlobeChunkLoaderFactory()
-{
-  delete mTextureGenerator;
-}
+{}
 
 QgsChunkLoader *QgsGlobeChunkLoaderFactory::createChunkLoader( QgsChunkNode *node ) const
 {
-  return new QgsGlobeChunkLoader( node, mTextureGenerator, mGlobeCrsToLatLon );
+  return new QgsGlobeChunkLoader( node, Qgs3DRenderContext::fromMapSettings( mMapSettings ), mTextureGenerator.get(), mGlobeCrsToLatLon );
 }
 
 QgsChunkNode *QgsGlobeChunkLoaderFactory::createRootNode() const
 {
-  QgsBox3D rootNodeBox3D( -mRadiusX, -mRadiusY, -mRadiusZ, +mRadiusX, +mRadiusY, +mRadiusZ );
+  const QgsChunkNodeId rootId( 0, 0, 0, 0 );
+  const QgsBox3D rootNodeBox3D( -mRadius.x(), -mRadius.y(), -mRadius.z(), mRadius.x(), mRadius.y(), mRadius.z() );
   // use very high error to force immediate switch to level 1 (two hemispheres)
-  QgsChunkNode *node = new QgsChunkNode( QgsChunkNodeId( 0, 0, 0, 0 ), rootNodeBox3D, 999'999 );
+  QgsChunkNode *node = new QgsChunkNode( rootId, rootNodeBox3D, 999'999 );
   return node;
 }
 
@@ -361,20 +315,21 @@ QVector<QgsChunkNode *> QgsGlobeChunkLoaderFactory::createChildren( QgsChunkNode
     double d2 = mDistanceArea.measureLine( QgsPointXY( 0, 0 ), QgsPointXY( 0, 90 ) );
     float error = static_cast<float>( std::max( d1, d2 ) ) / static_cast<float>( mMapSettings->terrainSettings()->mapTileResolution() );
 
-    QgsBox3D boxWest( -mRadiusX, -mRadiusY, -mRadiusZ, +mRadiusX, 0, +mRadiusZ );
-    QgsBox3D boxEast( -mRadiusX, 0, -mRadiusY, +mRadiusX, +mRadiusY, +mRadiusZ );
+    const QgsChunkNodeId westId( 1, 0, 0, 0 );
+    const QgsChunkNodeId eastId( 1, 1, 0, 0 );
 
     // two children: western and eastern hemisphere
-    QgsChunkNode *west = new QgsChunkNode( QgsChunkNodeId( 1, 0, 0, 0 ), boxWest, error, node );
-    QgsChunkNode *east = new QgsChunkNode( QgsChunkNodeId( 1, 1, 0, 0 ), boxEast, error, node );
+    QgsChunkNode *west = new QgsChunkNode( westId, QgsBox3D( -mRadius.x(), -mRadius.y(), -mRadius.z(), mRadius.x(), 0, mRadius.z() ), error, node );
+    QgsChunkNode *east = new QgsChunkNode( eastId, QgsBox3D( -mRadius.x(), 0, -mRadius.z(), mRadius.x(), mRadius.y(), mRadius.z() ), error, node );
     children << west << east;
   }
   else if ( node->error() > mMapSettings->terrainSettings()->maximumGroundError() )
   {
     QgsChunkNodeId nid = node->tileId();
 
-    double latMin, latMax, lonMin, lonMax;
-    globeNodeIdToLatLon( nid, latMin, latMax, lonMin, lonMax );
+    const QgsRectangle extent = QgsGlobeUtils::nodeIdToLonLatRect( nid );
+    const double lonMin = extent.xMinimum(), lonMax = extent.xMaximum();
+    const double latMin = extent.yMinimum(), latMax = extent.yMaximum();
     QgsChunkNodeId cid1( nid.d + 1, nid.x * 2, nid.y * 2 );
     QgsChunkNodeId cid2( nid.d + 1, nid.x * 2 + 1, nid.y * 2 );
     QgsChunkNodeId cid3( nid.d + 1, nid.x * 2, nid.y * 2 + 1 );
@@ -385,10 +340,10 @@ QVector<QgsChunkNode *> QgsGlobeChunkLoaderFactory::createChildren( QgsChunkNode
     float error = static_cast<float>( std::max( d1, d2 ) ) / static_cast<float>( mMapSettings->terrainSettings()->mapTileResolution() );
 
     children
-      << new QgsChunkNode( cid1, globeNodeIdToBox3D( cid1, mGlobeCrsToLatLon ), error, node )
-      << new QgsChunkNode( cid2, globeNodeIdToBox3D( cid2, mGlobeCrsToLatLon ), error, node )
-      << new QgsChunkNode( cid3, globeNodeIdToBox3D( cid3, mGlobeCrsToLatLon ), error, node )
-      << new QgsChunkNode( cid4, globeNodeIdToBox3D( cid4, mGlobeCrsToLatLon ), error, node );
+      << new QgsChunkNode( cid1, QgsGlobeUtils::nodeIdToBox3D( cid1, mGlobeCrsToLatLon ), error, node )
+      << new QgsChunkNode( cid2, QgsGlobeUtils::nodeIdToBox3D( cid2, mGlobeCrsToLatLon ), error, node )
+      << new QgsChunkNode( cid3, QgsGlobeUtils::nodeIdToBox3D( cid3, mGlobeCrsToLatLon ), error, node )
+      << new QgsChunkNode( cid4, QgsGlobeUtils::nodeIdToBox3D( cid4, mGlobeCrsToLatLon ), error, node );
   }
 
   return children;
@@ -454,14 +409,16 @@ class QgsGlobeMapUpdateJobFactory : public QgsChunkQueueJobFactory
 QgsGlobeEntity::QgsGlobeEntity( Qgs3DMapSettings *mapSettings )
   : QgsChunkedEntity( mapSettings, mapSettings->terrainSettings()->maximumScreenError(), new QgsGlobeChunkLoaderFactory( mapSettings ), true )
 {
-  connect( mapSettings, &Qgs3DMapSettings::showTerrainBoundingBoxesChanged, this, [this, mapSettings] { setShowBoundingBoxes( mapSettings->showTerrainBoundingBoxes() ); } );
+  mLayerWatcher = make_qobject_unique<QgsLayerStyleWatcher>( mapSettings );
+  connect( mLayerWatcher.get(), &QgsLayerStyleWatcher::styleChanged, this, &QgsGlobeEntity::invalidateMapImages );
+
+  connect( mapSettings, &Qgs3DMapSettings::showTerrainBoundingBoxesChanged, this, [this, mapSettings] {
+    setShowBoundingBoxes( mapSettings->debugFlags().testFlag( Qgis::Map3DDebugFlag::ShowTerrainBoundingBoxes ) );
+  } );
   connect( mapSettings, &Qgs3DMapSettings::showTerrainTilesInfoChanged, this, &QgsGlobeEntity::invalidateMapImages );
   connect( mapSettings, &Qgs3DMapSettings::showLabelsChanged, this, &QgsGlobeEntity::invalidateMapImages );
-  connect( mapSettings, &Qgs3DMapSettings::layersChanged, this, &QgsGlobeEntity::onLayersChanged );
   connect( mapSettings, &Qgs3DMapSettings::backgroundColorChanged, this, &QgsGlobeEntity::invalidateMapImages );
   connect( mapSettings, &Qgs3DMapSettings::terrainMapThemeChanged, this, &QgsGlobeEntity::invalidateMapImages );
-
-  connectToLayersRepaintRequest();
 
   mUpdateJobFactory = std::make_unique<QgsGlobeMapUpdateJobFactory>( mapSettings );
 }
@@ -513,7 +470,6 @@ QList<QgsRayCastHit> QgsGlobeEntity::rayIntersection( const QgsRay3D &ray, const
   return { hit };
 }
 
-
 void QgsGlobeEntity::invalidateMapImages()
 {
   QgsEventTracing::addEvent( QgsEventTracing::Instant, u"3D"_s, u"Invalidate textures"_s );
@@ -542,25 +498,5 @@ void QgsGlobeEntity::invalidateMapImages()
   setNeedsUpdate( true );
 }
 
-void QgsGlobeEntity::onLayersChanged()
-{
-  connectToLayersRepaintRequest();
-  invalidateMapImages();
-}
-
-void QgsGlobeEntity::connectToLayersRepaintRequest()
-{
-  for ( QgsMapLayer *layer : std::as_const( mLayers ) )
-  {
-    disconnect( layer, &QgsMapLayer::repaintRequested, this, &QgsGlobeEntity::invalidateMapImages );
-  }
-
-  mLayers = mMapSettings->layers();
-
-  for ( QgsMapLayer *layer : std::as_const( mLayers ) )
-  {
-    connect( layer, &QgsMapLayer::repaintRequested, this, &QgsGlobeEntity::invalidateMapImages );
-  }
-}
 
 /// @endcond

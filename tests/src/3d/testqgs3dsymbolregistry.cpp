@@ -35,6 +35,7 @@ class Dummy3DSymbol : public QgsAbstract3DSymbol
     QgsAbstract3DSymbol *clone() const override { return new Dummy3DSymbol(); }
     void writeXml( QDomElement &, const QgsReadWriteContext & ) const override {}
     void readXml( const QDomElement &, const QgsReadWriteContext & ) override {}
+    void setMaterialSettings( QgsAbstractMaterialSettings * ) override {};
 
     static QgsAbstract3DSymbol *create() { return new Dummy3DSymbol(); }
 };
@@ -154,8 +155,8 @@ void TestQgs3DSymbolRegistry::createSymbol()
   QVERIFY( dummySymbol );
 
   //try creating a bad symbol
-  symbol.reset( registry->createSymbol( u"bad symbol"_s ) );
-  QVERIFY( !symbol.get() );
+  symbol = registry->createSymbol( u"bad symbol"_s );
+  QVERIFY( !symbol );
 }
 
 void TestQgs3DSymbolRegistry::defaultSymbolForGeometryType()
@@ -163,11 +164,11 @@ void TestQgs3DSymbolRegistry::defaultSymbolForGeometryType()
   Qgs3DSymbolRegistry *registry = QgsApplication::symbol3DRegistry();
   std::unique_ptr<QgsAbstract3DSymbol> symbol( registry->defaultSymbolForGeometryType( Qgis::GeometryType::Point ) );
   QCOMPARE( symbol->type(), u"point"_s );
-  symbol.reset( registry->defaultSymbolForGeometryType( Qgis::GeometryType::Line ) );
+  symbol = registry->defaultSymbolForGeometryType( Qgis::GeometryType::Line );
   QCOMPARE( symbol->type(), u"line"_s );
-  symbol.reset( registry->defaultSymbolForGeometryType( Qgis::GeometryType::Polygon ) );
+  symbol = registry->defaultSymbolForGeometryType( Qgis::GeometryType::Polygon );
   QCOMPARE( symbol->type(), u"polygon"_s );
-  symbol.reset( registry->defaultSymbolForGeometryType( Qgis::GeometryType::Null ) );
+  symbol = registry->defaultSymbolForGeometryType( Qgis::GeometryType::Null );
   QVERIFY( !symbol );
 }
 

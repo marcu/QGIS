@@ -69,6 +69,7 @@
 #include "qgsplotregistry.h"
 #include "qgspluginlayerregistry.h"
 #include "qgspointcloudrendererregistry.h"
+#include "qgsprocessingdefaultstyleregistry.h"
 #include "qgsprofilesourceregistry.h"
 #include "qgsproject.h"
 #include "qgsprojectstorageregistry.h"
@@ -131,6 +132,14 @@
 
 using namespace Qt::StringLiterals;
 
+const QgsSettingsEntryString *QgsApplication::settingsApplicationFullName = new QgsSettingsEntryString( u"full-name"_s, QgsSettingsTree::sTreeApp, QString() );
+
+const QgsSettingsEntryStringList *QgsApplication::settingsSkippedGdalDrivers = new QgsSettingsEntryStringList( u"skip-drivers"_s, QgsSettingsTree::sTreeGdal, QStringList() );
+
+QgsSettingsTreeNamedListNode *QgsApplication::sTreeCustomVariables = QgsSettingsTree::sTreeApp->createNamedListNode( u"variables"_s );
+const QgsSettingsEntryVariant *QgsApplication::settingsCustomVariable
+  = new QgsSettingsEntryVariant( u"value"_s, sTreeCustomVariables, QVariant(), u"User-defined custom application variable, keyed by variable name. Available as @-prefixed variables in expressions."_s );
+
 const QgsSettingsEntryString *QgsApplication::settingsLocaleUserLocale = new QgsSettingsEntryString( u"userLocale"_s, QgsSettingsTree::sTreeLocale, QString() );
 
 const QgsSettingsEntryBool *QgsApplication::settingsLocaleOverrideFlag = new QgsSettingsEntryBool( u"overrideFlag"_s, QgsSettingsTree::sTreeLocale, false );
@@ -140,6 +149,8 @@ const QgsSettingsEntryString *QgsApplication::settingsLocaleGlobalLocale = new Q
 const QgsSettingsEntryBool *QgsApplication::settingsLocaleShowGroupSeparator = new QgsSettingsEntryBool( u"showGroupSeparator"_s, QgsSettingsTree::sTreeLocale, false );
 
 const QgsSettingsEntryStringList *QgsApplication::settingsSearchPathsForSVG = new QgsSettingsEntryStringList( u"searchPathsForSVG"_s, QgsSettingsTree::sTreeSvg, QStringList() );
+
+const QgsSettingsEntryString *QgsApplication::settingsNullRepresentation = new QgsSettingsEntryString( u"null-value"_s, QgsSettingsTree::sTreeQgis, u"NULL"_s );
 
 const QgsSettingsEntryInteger *QgsApplication::settingsConnectionPoolMaximumConcurrentConnections
   = new QgsSettingsEntryInteger( u"connection-pool-maximum-concurrent-connections"_s, QgsSettingsTree::sTreeCore, 4, QObject::tr( "Maximum number of concurrent connections per connection pool" ), Qgis::SettingsOptions(), 4, 999 );
@@ -343,6 +354,7 @@ void registerMetaTypes()
   qRegisterMetaType<QgsProcessingModelChildParameterSource>( "QgsProcessingModelChildParameterSource" );
   qRegisterMetaType<QgsRemappingSinkDefinition>( "QgsRemappingSinkDefinition" );
   qRegisterMetaType<QgsProcessingModelChildDependency>( "QgsProcessingModelChildDependency" );
+  qRegisterMetaType<QgsProcessingModelChildAlgorithmResult>( "QgsProcessingModelChildAlgorithmResult" );
   qRegisterMetaType<QgsTextFormat>( "QgsTextFormat" );
   qRegisterMetaType<QPainter::CompositionMode>( "QPainter::CompositionMode" );
   qRegisterMetaType<QgsDateTimeRange>( "QgsDateTimeRange" );
@@ -563,6 +575,8 @@ void QgsApplication::init( QString profileFolder )
   QgsStyle *defaultStyle = QgsStyle::defaultStyle( false );
   if ( !members()->mStyleModel )
     members()->mStyleModel = std::make_unique<QgsStyleModel>( defaultStyle );
+
+  QgsApplication::processingRegistry()->defaultStyleRegistry()->loadStyles();
 
   ABISYM( mInitialized ) = true;
 }
@@ -1091,7 +1105,11 @@ QString QgsApplication::resolvePkgPath()
     prefixPath = dir.absolutePath();
 #else
 
-#if defined( Q_OS_MACOS )
+#if defined( Q_OS_MACOS ) && defined( QGIS_MAC_BUNDLE )
+    // Go from QGIS.app/Contents/MacOS to the bundle root, like QgsApplication::init() does
+    QDir dir( appPath + "/../.."_L1 );
+    prefixPath = dir.absolutePath();
+#elif defined( Q_OS_MACOS )
     prefixPath = appPath;
 #elif defined( Q_OS_WIN )
     prefixPath = appPath;
@@ -1191,7 +1209,7 @@ void QgsApplication::setUITheme( const QString &themeName )
   {
     // apply OS-specific UI scale factor to stylesheet's em values
     int index = 0;
-    const static QRegularExpression regex( u"(?<=[\\s:])([0-9\\.]+)(?=em)"_s );
+    const thread_local QRegularExpression regex( u"(?<=[\\s:])([0-9\\.]+)(?=em)"_s );
     QRegularExpressionMatch match = regex.match( styledata, index );
     while ( match.hasMatch() )
     {
@@ -1299,11 +1317,11 @@ QString QgsApplication::srsDatabaseFilePath()
 {
   if ( ABISYM( mRunningFromBuildDir ) )
   {
-    QString tempCopy = QDir::tempPath() + "/srs6.db";
+    QString tempCopy = QDir::tempPath() + "/srs.db";
 
     if ( !QFile( tempCopy ).exists() )
     {
-      QFile f( buildSourcePath() + "/resources/srs6.db" );
+      QFile f( buildSourcePath() + "/resources/srs.db" );
       if ( !f.copy( tempCopy ) )
       {
         qFatal( "Could not create temporary copy" );
@@ -1497,8 +1515,11 @@ QString QgsApplication::applicationFullName()
     return *sApplicationFullName();
 
   //last resort
-  QgsSettings settings;
-  *sApplicationFullName() = settings.value( u"/qgis/application_full_name"_s, u"%1 %2"_s.arg( applicationName(), platform() ) ).toString();
+  const QString storedFullName = settingsApplicationFullName->value();
+  if ( !storedFullName.isEmpty() )
+    *sApplicationFullName() = storedFullName;
+  else
+    *sApplicationFullName() = u"%1 %2"_s.arg( applicationName(), platform() );
   return *sApplicationFullName();
 }
 
@@ -2015,32 +2036,14 @@ void QgsApplication::setSkippedGdalDrivers( const QStringList &skippedGdalDriver
   *sGdalSkipList() = skippedGdalDrivers;
   *sDeferredSkippedGdalDrivers() = deferredSkippedGdalDrivers;
 
-  QgsSettings settings;
-  settings.setValue( u"gdal/skipDrivers"_s, skippedGdalDrivers.join( ','_L1 ) );
+  settingsSkippedGdalDrivers->setValue( skippedGdalDrivers );
 
   applyGdalSkippedDrivers();
 }
 
 void QgsApplication::registerGdalDriversFromSettings()
 {
-  QgsSettings settings;
-  QString joinedList, delimiter;
-  if ( settings.contains( u"gdal/skipDrivers"_s ) )
-  {
-    joinedList = settings.value( u"gdal/skipDrivers"_s, QString() ).toString();
-    delimiter = u","_s;
-  }
-  else
-  {
-    joinedList = settings.value( u"gdal/skipList"_s, QString() ).toString();
-    delimiter = u" "_s;
-  }
-  QStringList myList;
-  if ( !joinedList.isEmpty() )
-  {
-    myList = joinedList.split( delimiter );
-  }
-  *sGdalSkipList() = myList;
+  *sGdalSkipList() = settingsSkippedGdalDrivers->value();
   applyGdalSkippedDrivers();
 }
 
@@ -2100,18 +2103,12 @@ void QgsApplication::copyPath( const QString &src, const QString &dst )
 
 QVariantMap QgsApplication::customVariables()
 {
-  //read values from QgsSettings
-  QgsSettings settings;
-
   QVariantMap variables;
 
-  //check if settings contains any variables
-  settings.beginGroup( "variables" );
-  QStringList childKeys = settings.childKeys();
-  for ( QStringList::const_iterator it = childKeys.constBegin(); it != childKeys.constEnd(); ++it )
+  const QStringList names = sTreeCustomVariables->items();
+  for ( const QString &name : names )
   {
-    QString name = *it;
-    variables.insert( name, settings.value( name ) );
+    variables.insert( name, settingsCustomVariable->value( name ) );
   }
 
   return variables;
@@ -2119,14 +2116,10 @@ QVariantMap QgsApplication::customVariables()
 
 void QgsApplication::setCustomVariables( const QVariantMap &variables )
 {
-  QgsSettings settings;
-
-  QVariantMap::const_iterator it = variables.constBegin();
-  settings.beginGroup( "variables" );
-  settings.remove( "" );
-  for ( ; it != variables.constEnd(); ++it )
+  sTreeCustomVariables->deleteAllItems();
+  for ( auto it = variables.constBegin(); it != variables.constEnd(); ++it )
   {
-    settings.setValue( it.key(), it.value() );
+    settingsCustomVariable->setValue( it.value(), { it.key() } );
   }
 
   emit instance() -> customVariablesChanged();
@@ -2134,10 +2127,7 @@ void QgsApplication::setCustomVariables( const QVariantMap &variables )
 
 void QgsApplication::setCustomVariable( const QString &name, const QVariant &value )
 {
-  // save variable to settings
-  QgsSettings settings;
-
-  settings.setValue( u"variables/"_s + name, value );
+  settingsCustomVariable->setValue( value, { name } );
 
   emit instance() -> customVariablesChanged();
 }
@@ -2204,7 +2194,7 @@ QString QgsApplication::nullRepresentation()
   ApplicationMembers *appMembers = members();
   if ( appMembers->mNullRepresentation.isNull() )
   {
-    appMembers->mNullRepresentation = QgsSettings().value( u"qgis/nullValue"_s, u"NULL"_s ).toString();
+    appMembers->mNullRepresentation = settingsNullRepresentation->value();
   }
   return appMembers->mNullRepresentation;
 }
@@ -2216,7 +2206,7 @@ void QgsApplication::setNullRepresentation( const QString &nullRepresentation )
     return;
 
   appMembers->mNullRepresentation = nullRepresentation;
-  QgsSettings().setValue( u"qgis/nullValue"_s, nullRepresentation );
+  settingsNullRepresentation->setValue( nullRepresentation );
 
   QgsApplication *app = instance();
   if ( app )

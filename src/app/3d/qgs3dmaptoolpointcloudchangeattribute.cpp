@@ -72,7 +72,7 @@ void Qgs3DMapToolPointCloudChangeAttribute::restart()
 
 void Qgs3DMapToolPointCloudChangeAttribute::changeAttributeValue( const QgsGeometry &geometry, const QString &attributeName, const double newValue, Qgs3DMapCanvas &canvas, QgsMapLayer *mapLayer )
 {
-  QgsEventTracing::ScopedEvent _trace( u"PointCloud"_s, u"Qgs3DMapToolPointCloudChangeAttribute::changeAttributeValue"_s );
+  QgsScopedEvent _trace( u"PointCloud"_s, u"Qgs3DMapToolPointCloudChangeAttribute::changeAttributeValue"_s );
   QgsGeos preparedPolygon = QgsGeos( geometry.constGet() );
   preparedPolygon.prepareGeometry();
 
@@ -127,7 +127,7 @@ SelectedPoints Qgs3DMapToolPointCloudChangeAttribute::searchPoints( QgsPointClou
 
   QVector<QgsPointCloudNodeId> nodes;
   {
-    QgsEventTracing::ScopedEvent _trace( u"PointCloud"_s, u"Qgs3DMapToolPointCloudChangeAttribute::searchPoints, looking for affected nodes"_s );
+    QgsScopedEvent _trace( u"PointCloud"_s, u"Qgs3DMapToolPointCloudChangeAttribute::searchPoints, looking for affected nodes"_s );
 
     const QList<QVector4D> clipPlanes = mCanvas->scene()->clipPlaneEquations();
     QQueue<QgsPointCloudNodeId> queue;
@@ -178,14 +178,14 @@ SelectedPoints Qgs3DMapToolPointCloudChangeAttribute::searchPoints( QgsPointClou
         continue;
 
       nodes.append( node.id() );
-      for ( const QgsPointCloudNodeId &child : node.children() )
+      for ( QgsPointCloudNodeId child : node.children() )
       {
         queue.append( child );
       }
     }
   }
 
-  QgsEventTracing::ScopedEvent _trace2( u"PointCloud"_s, u"Qgs3DMapToolPointCloudChangeAttribute::searchPoints, selecting points"_s );
+  QgsScopedEvent _trace2( u"PointCloud"_s, u"Qgs3DMapToolPointCloudChangeAttribute::searchPoints, selecting points"_s );
 
   // Get the map's clipping extent in layer crs and skip if empty. We only need points within this extent.
   const Qgs3DMapSettings *map = canvas.mapSettings();
@@ -198,7 +198,7 @@ SelectedPoints Qgs3DMapToolPointCloudChangeAttribute::searchPoints( QgsPointClou
   QgsAbstract3DRenderer *renderer3D = layer->renderer3D();
 
   // QtConcurrent requires std::function, bare lambdas lead to compile errors.
-  std::function mapFn = [this, &searchPolygon, &mapToPixel3D, pc = std::move( pc ), &elevationProperties, renderer3D, mapExtent]( const QgsPointCloudNodeId &n ) {
+  std::function mapFn = [this, &searchPolygon, &mapToPixel3D, pc = std::move( pc ), &elevationProperties, renderer3D, mapExtent]( QgsPointCloudNodeId n ) {
     const QVector<int> pts = selectedPointsInNode( searchPolygon, n, mapToPixel3D, pc, mapExtent, elevationProperties, renderer3D );
     if ( pts.isEmpty() )
       return SelectedPoints {};
@@ -227,7 +227,7 @@ bool Qgs3DMapToolPointCloudChangeAttribute::pointIsClipped( const QgsVector3D &m
 
 QVector<int> Qgs3DMapToolPointCloudChangeAttribute::selectedPointsInNode(
   const QgsGeos &searchPolygon,
-  const QgsPointCloudNodeId &n,
+  QgsPointCloudNodeId n,
   const MapToPixel3D &mapToPixel3D,
   QgsPointCloudIndex pcIndex,
   QgsRectangle mapExtent,

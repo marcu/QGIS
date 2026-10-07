@@ -28,12 +28,15 @@ class QDomElement;
 class QgsRasterInterface;
 class QgsRasterLayer;
 class QgsRasterRenderer;
+class QgsSettingsEntryBool;
+class QgsSettingsEntryDouble;
+class QgsSettingsEntryInteger;
 class QgsRasterRendererWidget;
 class QgsRasterDataProvider;
 class QgsRectangle;
 
 #ifndef SIP_RUN
-typedef QgsRasterRenderer *( *QgsRasterRendererCreateFunc )( const QDomElement &, QgsRasterInterface *input );
+typedef std::unique_ptr<QgsRasterRenderer> ( *QgsRasterRendererCreateFunc )( const QDomElement &, QgsRasterInterface *input );
 typedef QgsRasterRendererWidget *( *QgsRasterRendererWidgetCreateFunc )( QgsRasterLayer *, const QgsRectangle &extent );
 
 /**
@@ -141,7 +144,7 @@ class CORE_EXPORT QgsRasterRendererRegistry
      * Creates a default renderer for a raster drawing style (considering user options such as default contrast enhancement).
      * Caller takes ownership.
     */
-    QgsRasterRenderer *defaultRendererForDrawingStyle( Qgis::RasterDrawingStyle drawingStyle, QgsRasterDataProvider *provider ) const SIP_FACTORY;
+    std::unique_ptr<QgsRasterRenderer> defaultRendererForDrawingStyle( Qgis::RasterDrawingStyle drawingStyle, QgsRasterDataProvider *provider ) const;
 
   private:
     QHash< QString, QgsRasterRendererRegistryEntry > mEntries;
@@ -149,6 +152,15 @@ class CORE_EXPORT QgsRasterRendererRegistry
 
     //read min/max values from
     bool minMaxValuesForBand( int band, QgsRasterDataProvider *provider, double &minValue, double &maxValue ) const;
+
+  public:
+#ifndef SIP_RUN
+    static const QgsSettingsEntryInteger *settingsDefaultRedBand SIP_SKIP;
+    static const QgsSettingsEntryInteger *settingsDefaultGreenBand SIP_SKIP;
+    static const QgsSettingsEntryInteger *settingsDefaultBlueBand SIP_SKIP;
+    static const QgsSettingsEntryBool *settingsUseStandardDeviation SIP_SKIP;
+    static const QgsSettingsEntryDouble *settingsDefaultStandardDeviation SIP_SKIP;
+#endif
 };
 
 #endif // QGSRASTERRENDERERREGISTRY_H

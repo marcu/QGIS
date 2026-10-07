@@ -102,6 +102,8 @@ bool QgsClipAlgorithm::supportInPlaceEdit( const QgsMapLayer *l ) const
 
 QVariantMap QgsClipAlgorithm::processAlgorithm( const QVariantMap &parameters, QgsProcessingContext &context, QgsProcessingFeedback *feedback )
 {
+  QGS_MARK_ALGORITHM_SOURCE
+
   std::unique_ptr<QgsFeatureSource> featureSource( parameterAsSource( parameters, u"INPUT"_s, context ) );
   if ( !featureSource )
     throw QgsProcessingException( invalidSourceError( parameters, u"INPUT"_s ) );
@@ -143,7 +145,7 @@ QVariantMap QgsClipAlgorithm::processAlgorithm( const QVariantMap &parameters, Q
   QgsGeometry combinedClipGeom;
   if ( clipGeoms.length() > 1 )
   {
-    combinedClipGeom = QgsGeometry::unaryUnion( clipGeoms );
+    combinedClipGeom = QgsGeometry::unaryUnion( clipGeoms, QgsGeometryParameters(), feedback );
     if ( combinedClipGeom.isEmpty() )
     {
       throw QgsProcessingException( QObject::tr( "Could not create the combined clip geometry: %1" ).arg( combinedClipGeom.lastError() ) );
@@ -203,19 +205,19 @@ QVariantMap QgsClipAlgorithm::processAlgorithm( const QVariantMap &parameters, Q
       }
       testedFeatureIds.insert( inputFeature.id() );
 
-      if ( !engine->intersects( inputFeature.geometry().constGet() ) )
+      if ( !engine->intersects( inputFeature.geometry().constGet(), nullptr, feedback ) )
         continue;
 
       QgsGeometry newGeometry;
       if ( !engine->contains( inputFeature.geometry().constGet() ) )
       {
         const QgsGeometry currentGeometry = inputFeature.geometry();
-        newGeometry = combinedClipGeom.intersection( currentGeometry );
+        newGeometry = combinedClipGeom.intersection( currentGeometry, QgsGeometryParameters(), feedback );
         if ( newGeometry.wkbType() == Qgis::WkbType::Unknown || QgsWkbTypes::flatType( newGeometry.wkbType() ) == Qgis::WkbType::GeometryCollection )
         {
-          const QgsGeometry intCom = inputFeature.geometry().combine( newGeometry );
-          const QgsGeometry intSym = inputFeature.geometry().symDifference( newGeometry );
-          newGeometry = intCom.difference( intSym );
+          const QgsGeometry intCom = inputFeature.geometry().combine( newGeometry, QgsGeometryParameters(), feedback );
+          const QgsGeometry intSym = inputFeature.geometry().symDifference( newGeometry, QgsGeometryParameters(), feedback );
+          newGeometry = intCom.difference( intSym, QgsGeometryParameters(), feedback );
         }
       }
       else
@@ -232,7 +234,8 @@ QVariantMap QgsClipAlgorithm::processAlgorithm( const QVariantMap &parameters, Q
       outputFeature.setAttributes( inputFeature.attributes() );
       if ( !sink->addFeature( outputFeature, QgsFeatureSink::FastInsert ) )
         throw QgsProcessingException( writeFeatureError( sink.get(), parameters, u"OUTPUT"_s ) );
-
+      else
+        feedback->featureAddedToSink( u"OUTPUT"_s );
 
       if ( singleClipFeature )
         feedback->setProgress( current * step );
@@ -246,6 +249,7 @@ QVariantMap QgsClipAlgorithm::processAlgorithm( const QVariantMap &parameters, Q
   }
 
   sink->finalize();
+  feedback->featureSinkFinalized( u"OUTPUT"_s );
 
   return outputs;
 }

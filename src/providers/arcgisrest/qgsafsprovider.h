@@ -26,6 +26,7 @@
 #include "qgsfields.h"
 #include "qgshttpheaders.h"
 #include "qgslayermetadata.h"
+#include "qgslayerrenderingsettings.h"
 #include "qgsprovidermetadata.h"
 #include "qgssettings.h"
 #include "qgssettingsentryimpl.h"
@@ -90,6 +91,7 @@ class QgsAfsProvider : public QgsVectorDataProvider
     QString dataComment() const override;
     QgsFeatureRenderer *createRenderer( const QVariantMap &configuration = QVariantMap() ) const override;
     QgsAbstractVectorLayerLabeling *createLabeling( const QVariantMap &configuration = QVariantMap() ) const override;
+    const QgsLayerRenderingSettings *renderingSettings( const QVariantMap &configuration = QVariantMap() ) const override;
     bool renderInPreview( const QgsDataProvider::PreviewContext &context ) override;
 
     static QString providerKey();
@@ -101,10 +103,11 @@ class QgsAfsProvider : public QgsVectorDataProvider
     std::shared_ptr<QgsAfsSharedData> mSharedData;
     QString mLayerName;
     QString mLayerDescription;
-    QStringList mCapabilityStrings;
+    Qgis::ArcGisRestServiceCapabilities mCapabilities;
     QgsLayerMetadata mLayerMetadata;
     QVariantMap mRendererDataMap;
     QVariantList mLabelingDataList;
+    QgsLayerRenderingSettings mRenderingSettings;
     QgsHttpHeaders mRequestHeaders;
     bool mServerSupportsCurvedUpdates = false;
     QString mAdminUrl;
@@ -123,6 +126,7 @@ class QgsAfsProviderMetadata : public QgsProviderMetadata
   public:
     QgsAfsProviderMetadata();
     QIcon icon() const override;
+    QgsProviderMetadata::ProviderCapabilities providerCapabilities() const override;
     QList<QgsDataItemProvider *> dataItemProviders() const override;
     QVariantMap decodeUri( const QString &uri ) const override;
     QString encodeUri( const QVariantMap &parts ) const override;

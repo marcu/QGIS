@@ -29,7 +29,9 @@
 #include "qgsprovidersourcewidgetproviderregistry.h"
 #include "qgsvectortilebasiclabelingwidget.h"
 #include "qgsvectortilebasicrendererwidget.h"
+#include "qgsvectortilelabeling.h"
 #include "qgsvectortilelayer.h"
+#include "qgsvectortilerenderer.h"
 #include "qgsvectortileutils.h"
 
 #include <QDesktopServices>
@@ -89,6 +91,8 @@ QgsVectorTileLayerProperties::QgsVectorTileLayerProperties( QgsVectorTileLayer *
   setMetadataWidget( mMetadataWidget, mOptsPage_Metadata );
 
   mMapLayerServerPropertiesWidget->setHasWfsTitle( false );
+
+  connect( mMetadataViewer, &QTextBrowser::anchorClicked, this, &QgsVectorTileLayerProperties::openUrl );
 
   // update based on lyr's current state
   syncToLayer();
@@ -156,10 +160,11 @@ void QgsVectorTileLayerProperties::syncToLayer()
   /*
    * Information Tab
    */
-  const QString myStyle = QgsApplication::reportStyleSheet( QgsApplication::StyleSheetType::WebBrowser );
-  // Inject the stylesheet
-  const QString html { mLayer->htmlMetadata().replace( "<head>"_L1, QStringLiteral( R"raw(<head><style type="text/css">%1</style>)raw" ) ).arg( myStyle ) };
-  mMetadataViewer->setHtml( html );
+  QString myStyle = QgsApplication::reportStyleSheet();
+  myStyle.append( u"body { margin: 10px; }\n "_s );
+  mMetadataViewer->clear();
+  mMetadataViewer->document()->setDefaultStyleSheet( myStyle );
+  mMetadataViewer->setHtml( mLayer->htmlMetadata() );
 
   /*
    * Source
@@ -281,11 +286,11 @@ void QgsVectorTileLayerProperties::loadStyle()
         {
           if ( dlg.styleCategories().testFlag( QgsMapLayer::StyleCategory::Symbology ) )
           {
-            mLayer->setRenderer( converter.renderer() );
+            mLayer->setRenderer( converter.renderer().release() );
           }
           if ( dlg.styleCategories().testFlag( QgsMapLayer::StyleCategory::Labeling ) )
           {
-            mLayer->setLabeling( converter.labeling() );
+            mLayer->setLabeling( converter.labeling().release() );
           }
           syncToLayer();
         }

@@ -42,30 +42,35 @@
 #include "qgssurface.h"
 #include "qgstriangle.h"
 #include "qgsunittypes.h"
+#include "qgsziputils.h"
 
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
 #include <QString>
+#include <QTemporaryDir>
 #include <QTextStream>
 #include <QtTest/QTest>
 
 using namespace Qt::StringLiterals;
 
-#define QGSTEST_MAIN( TestObject )             \
-  QT_BEGIN_NAMESPACE                           \
-  QT_END_NAMESPACE                             \
-  int main( int argc, char *argv[] )           \
-  {                                            \
-    QgsApplication app( argc, argv, false );   \
-    app.init();                                \
-    app.setAttribute( Qt::AA_Use96Dpi, true ); \
-    QTEST_DISABLE_KEYPAD_NAVIGATION            \
-    TestObject tc;                             \
-    QTEST_SET_MAIN_SOURCE_PATH                 \
-    return QTest::qExec( &tc, argc, argv );    \
+#define QGSTEST_MAIN( TestObject )                                     \
+  QT_BEGIN_NAMESPACE                                                   \
+  QT_END_NAMESPACE                                                     \
+  int main( int argc, char *argv[] )                                   \
+  {                                                                    \
+    QCoreApplication::setOrganizationName( u"QGIS"_s );                \
+    QCoreApplication::setOrganizationDomain( u"qgis.org"_s );          \
+    QCoreApplication::setApplicationName( u"QGIS-TEST"_s );            \
+    const QTemporaryDir settingsDir;                                   \
+    qputenv( "QGIS_CUSTOM_CONFIG_PATH", settingsDir.path().toUtf8() ); \
+    QgsApplication app( argc, argv, false );                           \
+    app.setAttribute( Qt::AA_Use96Dpi, true );                         \
+    QTEST_DISABLE_KEYPAD_NAVIGATION                                    \
+    TestObject tc;                                                     \
+    QTEST_SET_MAIN_SOURCE_PATH                                         \
+    return QTest::qExec( &tc, argc, argv );                            \
   }
-
 
 #define QGSCOMPARENEAR( value, expected, epsilon )                                                                                                                                                                     \
   {                                                                                                                                                                                                                    \
@@ -280,13 +285,31 @@ class TEST_EXPORT QgsTest : public QObject
       QString header = QString( "checkLongStr (%1, %2):" ).arg( name, referenceName );
       QString subPath = "control_files/" + mControlPathPrefix + "/expected_" + name + "/" + "expected_" + referenceName;
       QString expectedPath = testDataPath( subPath );
+
+      QByteArray expectedStr;
       QFile expectedFile( expectedPath );
-      if ( !expectedFile.open( QFile::ReadOnly | QIODevice::Text ) )
+      if ( expectedFile.open( QFile::ReadOnly | QIODevice::Text ) )
       {
-        qWarning() << header.toStdString().c_str() << "Unable to open expected data file" << expectedPath;
-        return false;
+        expectedStr = expectedFile.readAll();
       }
-      QByteArray expectedStr = expectedFile.readAll();
+      else
+      {
+        // Using gzip helps in limiting code base size when using big data files.
+        QFile expectedFileGZ( expectedPath + ".gz" );
+        if ( expectedFileGZ.open( QFile::ReadOnly ) )
+        {
+          if ( !QgsZipUtils::decodeGzip( expectedFileGZ.readAll(), expectedStr ) )
+          {
+            qWarning() << header.toStdString().c_str() << "Unable to open expected GZip data file" << expectedPath;
+            return false;
+          }
+        }
+        else
+        {
+          qWarning() << header.toStdString().c_str() << "Unable to open expected data file" << expectedPath;
+          return false;
+        }
+      }
 
       if ( actualStr.size() != expectedStr.size() )
       {
@@ -336,10 +359,10 @@ class TEST_EXPORT QgsTest : public QObject
           QString msg = QString( "%1 Comparison failed in starting from char %2." ).arg( header ).arg( QString::number( i ) );
 
           // create copies of data as QTest::compare_helper will delete them
-          char *actualCopy = new char[act.size() + 1];
+          char *actualCopy = qstrdup( act.constData() );
           memcpy( actualCopy, act.data(), act.size() );
           actualCopy[act.size()] = 0;
-          char *expectedCopy = new char[exp.size() + 1];
+          char *expectedCopy = qstrdup( exp.constData() );
           memcpy( expectedCopy, exp.data(), exp.size() );
           expectedCopy[exp.size()] = 0;
 

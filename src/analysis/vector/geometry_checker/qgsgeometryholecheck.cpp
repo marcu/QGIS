@@ -58,7 +58,15 @@ QgsGeometryCheck::Result QgsGeometryHoleCheck::collectErrors(
       // Rings after the first one are interiors
       for ( int iRing = 1, nRings = poly->ringCount( iPart ); iRing < nRings; ++iRing )
       {
-        const QgsPoint pos = poly->interiorRing( iRing - 1 )->centroid();
+        const QgsCurve *interiorRing = poly->interiorRing( iRing - 1 );
+        double area = 0;
+        interiorRing->sumUpArea( area );
+
+        // Skip holes with an area larger or equal to the check threshold
+        if ( mAreaThreshold > 0 && area >= mAreaThreshold )
+          continue;
+
+        const QgsPoint pos = interiorRing->centroid();
         errors.append( new QgsGeometryCheckError( this, layerFeature, pos, QgsVertexId( iPart, iRing ) ) );
       }
     }
@@ -80,7 +88,7 @@ void QgsGeometryHoleCheck::fixError( const QMap<QString, QgsFeaturePool *> &feat
   const QgsVertexId vidx = error->vidx();
 
   // Check if ring still exists
-  if ( !vidx.isValid( geom ) )
+  if ( !geom->hasVertex( QgsVertexId( vidx.part, vidx.ring, 0 ) ) )
   {
     error->setObsolete();
     return;

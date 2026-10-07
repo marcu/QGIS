@@ -96,6 +96,8 @@ bool QgsVoronoiPolygonsAlgorithm::prepareAlgorithm( const QVariantMap &parameter
 
 QVariantMap QgsVoronoiPolygonsAlgorithm::processAlgorithm( const QVariantMap &parameters, QgsProcessingContext &context, QgsProcessingFeedback *feedback )
 {
+  QGS_MARK_ALGORITHM_SOURCE
+
   QString dest;
   if ( mCopyAttributes )
   {
@@ -188,7 +190,7 @@ QString QgsVoronoiPolygonsAlgorithm::voronoiWithAttributes( const QVariantMap &p
       QgsFeature f;
       f.setFields( fields );
 
-      QgsGeometry voronoiClippedToExtent = QgsGeometry( extentEngine->intersection( collectionPart.constGet() ) );
+      QgsGeometry voronoiClippedToExtent = QgsGeometry( extentEngine->intersection( collectionPart.constGet(), nullptr, QgsGeometryParameters(), feedback ) );
       voronoiClippedToExtent.convertGeometryCollectionToSubclass( Qgis::GeometryType::Polygon );
       if ( !voronoiClippedToExtent.isEmpty() )
       {
@@ -198,7 +200,7 @@ QString QgsVoronoiPolygonsAlgorithm::voronoiWithAttributes( const QVariantMap &p
         engine->prepareGeometry();
         for ( const QgsFeatureId id : intersected )
         {
-          if ( engine->intersects( index.geometry( id ).constGet() ) )
+          if ( engine->intersects( index.geometry( id ).constGet(), nullptr, feedback ) )
           {
             f.setAttributes( attributeCache.value( id ) );
             break;
@@ -206,6 +208,8 @@ QString QgsVoronoiPolygonsAlgorithm::voronoiWithAttributes( const QVariantMap &p
         }
         if ( !sink->addFeature( f, QgsFeatureSink::FastInsert ) )
           throw QgsProcessingException( writeFeatureError( sink.get(), parameters, u"OUTPUT"_s ) );
+        else
+          feedback->featureAddedToSink( u"OUTPUT"_s );
       }
       feedback->setProgress( 50 + i * step );
       i++;
@@ -213,6 +217,7 @@ QString QgsVoronoiPolygonsAlgorithm::voronoiWithAttributes( const QVariantMap &p
   }
 
   sink->finalize();
+  feedback->featureSinkFinalized( u"OUTPUT"_s );
 
   return dest;
 }
@@ -285,15 +290,18 @@ QString QgsVoronoiPolygonsAlgorithm::voronoiWithoutAttributes( const QVariantMap
       }
       QgsFeature f;
       f.setFields( fields );
-      f.setGeometry( QgsGeometry( extentEngine->intersection( collection[i].constGet() ) ) );
+      f.setGeometry( QgsGeometry( extentEngine->intersection( collection[i].constGet(), nullptr, QgsGeometryParameters(), feedback ) ) );
       f.setAttributes( QgsAttributes() << i );
       if ( !sink->addFeature( f, QgsFeatureSink::FastInsert ) )
         throw QgsProcessingException( writeFeatureError( sink.get(), parameters, u"OUTPUT"_s ) );
+      else
+        feedback->featureAddedToSink( u"OUTPUT"_s );
       feedback->setProgress( i * step );
     }
   }
 
   sink->finalize();
+  feedback->featureSinkFinalized( u"OUTPUT"_s );
 
   return dest;
 }

@@ -18,8 +18,8 @@
 
 #include "qgis.h"
 #include "qgis_core.h"
-#include "qgsblanksegmentutils.h"
 #include "qgssymbollayer.h"
+#include "qgssymbollayerutils.h"
 
 #include <QPen>
 #include <QVector>
@@ -61,12 +61,12 @@ class CORE_EXPORT QgsSimpleLineSymbolLayer : public QgsLineSymbolLayer
      * serialized in the \a properties map (corresponding to the output from
      * QgsSimpleLineSymbolLayer::properties() ).
      */
-    static QgsSymbolLayer *create( const QVariantMap &properties = QVariantMap() ) SIP_FACTORY;
+    static std::unique_ptr<QgsSymbolLayer> create( const QVariantMap &properties = QVariantMap() );
 
     /**
      * Creates a new QgsSimpleLineSymbolLayer from an SLD XML DOM \a element.
      */
-    static QgsSymbolLayer *createFromSld( QDomElement &element ) SIP_FACTORY;
+    static std::unique_ptr<QgsSymbolLayer> createFromSld( QDomElement &element );
 
     QString layerType() const override;
     Qgis::SymbolLayerFlags flags() const override;
@@ -88,8 +88,10 @@ class CORE_EXPORT QgsSimpleLineSymbolLayer : public QgsLineSymbolLayer
     double estimateMaxBleed( const QgsRenderContext &context ) const override;
     QVector<qreal> dxfCustomDashPattern( Qgis::RenderUnit &unit ) const override;
     Qt::PenStyle dxfPenStyle() const override;
-    double dxfWidth( const QgsDxfExport &e, QgsSymbolRenderContext &context ) const override;
-    double dxfOffset( const QgsDxfExport &e, QgsSymbolRenderContext &context ) const override;
+    using QgsLineSymbolLayer::dxfWidth;
+    double dxfWidth( QgsSymbolRenderContext &context ) const override;
+    using QgsLineSymbolLayer::dxfOffset;
+    double dxfOffset( QgsSymbolRenderContext &context ) const override;
     QColor dxfColor( QgsSymbolRenderContext &context ) const override;
     bool canCauseArtifactsBetweenAdjacentTiles() const override;
 
@@ -1031,9 +1033,9 @@ class CORE_EXPORT QgsTemplatedLineSymbolLayerBase : public QgsLineSymbolLayer
     int mRingIndex = 0; // current ring index while rendering
 
   private:
-    void renderPolylineInterval( const QPolygonF &points, QgsSymbolRenderContext &context, double averageAngleOver, const QgsBlankSegmentUtils::BlankSegments &blankSegments );
-    void renderPolylineVertex( const QPolygonF &points, QgsSymbolRenderContext &context, Qgis::MarkerLinePlacement placement, const QgsBlankSegmentUtils::BlankSegments &blankSegments );
-    void renderPolylineCentral( const QPolygonF &points, QgsSymbolRenderContext &context, double averageAngleOver, const QgsBlankSegmentUtils::BlankSegments &blankSegments );
+    void renderPolylineInterval( const QPolygonF &points, QgsSymbolRenderContext &context, double averageAngleOver, const QgsSymbolLayerUtils::BlankSegments &blankSegments );
+    void renderPolylineVertex( const QPolygonF &points, QgsSymbolRenderContext &context, Qgis::MarkerLinePlacement placement, const QgsSymbolLayerUtils::BlankSegments &blankSegments );
+    void renderPolylineCentral( const QPolygonF &points, QgsSymbolRenderContext &context, double averageAngleOver, const QgsSymbolLayerUtils::BlankSegments &blankSegments );
 
     double markerAngle( const QPolygonF &points, bool isRing, int vertex );
 
@@ -1051,7 +1053,7 @@ class CORE_EXPORT QgsTemplatedLineSymbolLayerBase : public QgsLineSymbolLayer
      * \see setOffsetAlongLineUnit
      */
     void renderOffsetVertexAlongLine(
-      const QPolygonF &points, int vertex, double distance, QgsSymbolRenderContext &context, Qgis::MarkerLinePlacement placement, const QgsBlankSegmentUtils::BlankSegments &blankSegments
+      const QPolygonF &points, int vertex, double distance, QgsSymbolRenderContext &context, Qgis::MarkerLinePlacement placement, const QgsSymbolLayerUtils::BlankSegments &blankSegments
     );
 
 
@@ -1087,6 +1089,10 @@ class CORE_EXPORT QgsTemplatedLineSymbolLayerBase : public QgsLineSymbolLayer
     Qgis::RenderUnit mTrimDistanceEndUnit = Qgis::RenderUnit::Millimeters;
     QgsMapUnitScale mTrimDistanceEndMapUnitScale;
 
+    // We need to block render extra items. When rendering a multi geometry
+    // we have to render extra items only once
+    bool mBlockExtraItemsRendering = false;
+
     friend class TestQgsMarkerLineSymbol;
 };
 
@@ -1116,12 +1122,12 @@ class CORE_EXPORT QgsMarkerLineSymbolLayer : public QgsTemplatedLineSymbolLayerB
      * serialized in the \a properties map (corresponding to the output from
      * QgsMarkerLineSymbolLayer::properties() ).
      */
-    static QgsSymbolLayer *create( const QVariantMap &properties = QVariantMap() ) SIP_FACTORY;
+    static std::unique_ptr<QgsSymbolLayer> create( const QVariantMap &properties = QVariantMap() );
 
     /**
      * Creates a new QgsMarkerLineSymbolLayer from an SLD XML DOM \a element.
      */
-    static QgsSymbolLayer *createFromSld( QDomElement &element ) SIP_FACTORY;
+    static std::unique_ptr<QgsSymbolLayer> createFromSld( QDomElement &element );
 
     // implemented from base classes
 
@@ -1203,7 +1209,7 @@ class CORE_EXPORT QgsHashedLineSymbolLayer : public QgsTemplatedLineSymbolLayerB
      * serialized in the \a properties map (corresponding to the output from
      * QgsHashedLineSymbolLayer::properties() ).
      */
-    static QgsSymbolLayer *create( const QVariantMap &properties = QVariantMap() ) SIP_FACTORY;
+    static std::unique_ptr<QgsSymbolLayer> create( const QVariantMap &properties = QVariantMap() );
 
     QString layerType() const override;
     void startRender( QgsSymbolRenderContext &context ) override;
@@ -1382,7 +1388,7 @@ class CORE_EXPORT QgsRasterLineSymbolLayer : public QgsAbstractBrushedLineSymbol
      * serialized in the \a properties map (corresponding to the output from
      * QgsRasterLineSymbolLayer::properties() ).
      */
-    static QgsSymbolLayer *create( const QVariantMap &properties = QVariantMap() ) SIP_FACTORY;
+    static std::unique_ptr<QgsSymbolLayer> create( const QVariantMap &properties = QVariantMap() );
 
     /**
      * Turns relative paths in properties map to absolute when reading and vice versa when writing.
@@ -1463,7 +1469,7 @@ class CORE_EXPORT QgsLineburstSymbolLayer : public QgsAbstractBrushedLineSymbolL
      * serialized in the \a properties map (corresponding to the output from
      * QgsLineburstSymbolLayer::properties() ).
      */
-    static QgsSymbolLayer *create( const QVariantMap &properties = QVariantMap() ) SIP_FACTORY;
+    static std::unique_ptr<QgsSymbolLayer> create( const QVariantMap &properties = QVariantMap() );
 
     QString layerType() const override;
     Qgis::SymbolLayerFlags flags() const override;
@@ -1557,7 +1563,7 @@ class CORE_EXPORT QgsFilledLineSymbolLayer : public QgsLineSymbolLayer
      * serialized in the \a properties map (corresponding to the output from
      * QgsFilledLineSymbolLayer::properties() ).
      */
-    static QgsSymbolLayer *create( const QVariantMap &properties = QVariantMap() ) SIP_FACTORY;
+    static std::unique_ptr<QgsSymbolLayer> create( const QVariantMap &properties = QVariantMap() );
 
     QString layerType() const override;
     void startRender( QgsSymbolRenderContext &context ) override;

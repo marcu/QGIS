@@ -110,6 +110,8 @@ QgsRasterLayerProperties::QgsRasterLayerProperties( QgsMapLayer *lyr, QgsMapCanv
   setupUi( this );
 
   mMetadataViewer = new QgsWebView( this );
+  mMetadataViewer->setOpenLinks( false );
+  connect( mMetadataViewer, &QTextBrowser::anchorClicked, this, &QgsRasterLayerProperties::openUrl );
   mOptsPage_Information->layout()->addWidget( mMetadataViewer );
 
   mRasterTransparencyWidget = new QgsRasterTransparencyWidget( mRasterLayer, canvas, this );
@@ -638,12 +640,12 @@ void QgsRasterLayerProperties::setRendererWidget( const QString &rendererName )
       {
         if ( rendererName == "singlebandgray"_L1 )
         {
-          whileBlocking( mRasterLayer )->setRenderer( QgsApplication::rasterRendererRegistry()->defaultRendererForDrawingStyle( Qgis::RasterDrawingStyle::SingleBandGray, mRasterLayer->dataProvider() ) );
+          whileBlocking( mRasterLayer )->setRenderer( QgsApplication::rasterRendererRegistry()->defaultRendererForDrawingStyle( Qgis::RasterDrawingStyle::SingleBandGray, mRasterLayer->dataProvider() ).release() );
           whileBlocking( mRasterLayer )->setDefaultContrastEnhancement();
         }
         else if ( rendererName == "multibandcolor"_L1 )
         {
-          whileBlocking( mRasterLayer )->setRenderer( QgsApplication::rasterRendererRegistry()->defaultRendererForDrawingStyle( Qgis::RasterDrawingStyle::MultiBandColor, mRasterLayer->dataProvider() ) );
+          whileBlocking( mRasterLayer )->setRenderer( QgsApplication::rasterRendererRegistry()->defaultRendererForDrawingStyle( Qgis::RasterDrawingStyle::MultiBandColor, mRasterLayer->dataProvider() ).release() );
           whileBlocking( mRasterLayer )->setDefaultContrastEnhancement();
         }
       }
@@ -845,16 +847,11 @@ void QgsRasterLayerProperties::apply()
     }
   }
 
-  // Do nothing on "bad" layers
-  if ( !mRasterLayer->isValid() )
-    return;
-
   // apply all plugin dialogs
   for ( QgsMapLayerConfigWidget *page : std::as_const( mConfigWidgets ) )
   {
     page->apply();
   }
-
 
   /*
    * Legend Tab
@@ -870,9 +867,12 @@ void QgsRasterLayerProperties::apply()
   //set whether the layer histogram should be inverted
   //mRasterLayer->setInvertHistogram( cboxInvertColorMap->isChecked() );
 
-  mRasterLayer->brightnessFilter()->setBrightness( mSliderBrightness->value() );
-  mRasterLayer->brightnessFilter()->setContrast( mSliderContrast->value() );
-  mRasterLayer->brightnessFilter()->setGamma( mGammaSpinBox->value() );
+  if ( mRasterLayer->brightnessFilter() )
+  {
+    mRasterLayer->brightnessFilter()->setBrightness( mSliderBrightness->value() );
+    mRasterLayer->brightnessFilter()->setContrast( mSliderContrast->value() );
+    mRasterLayer->brightnessFilter()->setGamma( mGammaSpinBox->value() );
+  }
 
   QgsDebugMsgLevel( u"processing transparency tab"_s, 3 );
   /*
@@ -1302,10 +1302,11 @@ bool QgsRasterLayerProperties::rasterIsMultiBandColor()
 
 void QgsRasterLayerProperties::updateInformationContent()
 {
-  const QString myStyle = QgsApplication::reportStyleSheet( QgsApplication::StyleSheetType::WebBrowser );
-  // Inject the stylesheet
-  const QString html { mRasterLayer->htmlMetadata().replace( "<head>"_L1, QStringLiteral( R"raw(<head><style type="text/css">%1</style>)raw" ) ).arg( myStyle ) };
-  mMetadataViewer->setHtml( html );
+  QString myStyle = QgsApplication::reportStyleSheet();
+  myStyle.append( u"body { margin: 10px; }\n "_s );
+  mMetadataViewer->clear();
+  mMetadataViewer->document()->setDefaultStyleSheet( myStyle );
+  mMetadataViewer->setHtml( mRasterLayer->htmlMetadata() );
   mMetadataFilled = true;
 }
 

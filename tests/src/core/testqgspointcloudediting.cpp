@@ -591,8 +591,27 @@ void TestQgsPointCloudEditing::testVPCStarStopEditing()
   QVERIFY( !layer->index() );
   QVERIFY( layer->isVpc() );
 
+  // check if start/stop works when no sub index is loaded
+  QVector< QgsPointCloudSubIndex > subIndexes = layer->subIndexes();
+  QVERIFY( !subIndexes.at( 0 ).index().isValid() );
+  QVERIFY( !subIndexes.at( 1 ).index().isValid() );
+  QVERIFY( !subIndexes.at( 2 ).index().isValid() );
+  QVERIFY( !subIndexes.at( 3 ).index().isValid() );
+  QVERIFY( layer->startEditing() );
+  QVERIFY( layer->isEditable() );
+  QVERIFY( !layer->isModified() );
+  QVERIFY( layer->rollBack() );
+  QVERIFY( !layer->isEditable() );
+  QVERIFY( !layer->isModified() );
+
+  QgsVirtualPointCloudProvider *vpcProvider = qobject_cast<QgsVirtualPointCloudProvider *>( layer->dataProvider() );
+  QVERIFY( vpcProvider );
+
+  QSignalSpy spyLoading( vpcProvider, &QgsVirtualPointCloudProvider::subIndexLoaded );
   layer->dataProvider()->loadSubIndex( 2 );
+  QVERIFY( spyLoading.wait() );
   layer->dataProvider()->loadSubIndex( 3 );
+  QVERIFY( spyLoading.wait() );
 
   QSignalSpy spyStart( layer.get(), &QgsMapLayer::editingStarted );
   QSignalSpy spyStop( layer.get(), &QgsMapLayer::editingStopped );
@@ -604,7 +623,7 @@ void TestQgsPointCloudEditing::testVPCStarStopEditing()
   QCOMPARE( spyStop.size(), 0 );
   QCOMPARE( spyModify.size(), 0 );
 
-  QVector< QgsPointCloudSubIndex > subIndexes = layer->subIndexes();
+  subIndexes = layer->subIndexes();
   QVERIFY( !subIndexes.at( 0 ).index().isValid() );
   QVERIFY( !subIndexes.at( 1 ).index().isValid() );
   QVERIFY( dynamic_cast<QgsPointCloudEditingIndex *>( subIndexes.at( 2 ).index().get() ) );
@@ -656,6 +675,7 @@ void TestQgsPointCloudEditing::testVPCStarStopEditing()
 
   // test the creation of editing index while open for editing
   layer->dataProvider()->loadSubIndex( 1 );
+  QVERIFY( spyLoading.wait() );
   subIndexes = layer->subIndexes();
   QVERIFY( !subIndexes.at( 0 ).index().isValid() );
   QVERIFY( dynamic_cast<QgsPointCloudEditingIndex *>( subIndexes.at( 1 ).index().get() ) );
@@ -683,10 +703,14 @@ void TestQgsPointCloudEditing::testVPCModifyAttributeValue()
   const QString vpcPath = dataPath + u"/combined.vpc"_s;
 
   auto layer = std::make_unique<QgsPointCloudLayer>( vpcPath, u"layer"_s, u"vpc"_s );
+  QgsVirtualPointCloudProvider *vpcProvider = qobject_cast<QgsVirtualPointCloudProvider *>( layer->dataProvider() );
+  QVERIFY( vpcProvider );
+  QSignalSpy spyLoading( vpcProvider, &QgsVirtualPointCloudProvider::subIndexLoaded );
 
   for ( int i = 0; i < 4; i++ )
   {
     layer->dataProvider()->loadSubIndex( i );
+    QVERIFY( spyLoading.wait() );
   }
 
   QSignalSpy spy( layer.get(), &QgsMapLayer::layerModified );
@@ -812,10 +836,15 @@ void TestQgsPointCloudEditing::testVPCModifyAttributeValueInvalid()
   const QString vpcPath = dataPath + u"/combined.vpc"_s;
 
   auto layer = std::make_unique<QgsPointCloudLayer>( vpcPath, u"layer"_s, u"vpc"_s );
+  QgsVirtualPointCloudProvider *vpcProvider = qobject_cast<QgsVirtualPointCloudProvider *>( layer->dataProvider() );
+  QVERIFY( vpcProvider );
+  QSignalSpy spyLoading( vpcProvider, &QgsVirtualPointCloudProvider::subIndexLoaded );
 
   // load only two, keep the other two not loaded for further tests
   layer->dataProvider()->loadSubIndex( 0 );
+  QVERIFY( spyLoading.wait() );
   layer->dataProvider()->loadSubIndex( 1 );
+  QVERIFY( spyLoading.wait() );
 
   QVERIFY( layer->isValid() );
   QVERIFY( layer->startEditing() );
@@ -899,13 +928,20 @@ void TestQgsPointCloudEditing::testVPCModifyAttributeValueFiltered()
 
   auto layer = std::make_unique<QgsPointCloudLayer>( vpcPath, u"layer"_s, u"vpc"_s );
   QVERIFY( layer->isValid() );
+  QgsVirtualPointCloudProvider *vpcProvider = qobject_cast<QgsVirtualPointCloudProvider *>( layer->dataProvider() );
+  QVERIFY( vpcProvider );
+  QSignalSpy spyLoading( vpcProvider, &QgsVirtualPointCloudProvider::subIndexLoaded );
 
   QSignalSpy spy( layer.get(), &QgsMapLayer::layerModified );
 
   layer->dataProvider()->loadSubIndex( 0 );
+  QVERIFY( spyLoading.wait() );
   layer->dataProvider()->loadSubIndex( 1 );
+  QVERIFY( spyLoading.wait() );
   layer->dataProvider()->loadSubIndex( 2 );
+  QVERIFY( spyLoading.wait() );
   layer->dataProvider()->loadSubIndex( 3 );
+  QVERIFY( spyLoading.wait() );
 
   QgsPointCloudCategoryList categories = QgsPointCloudRendererRegistry::classificationAttributeCategories( layer.get() );
   QgsPointCloudClassifiedRenderer *renderer = new QgsPointCloudClassifiedRenderer( u"Classification"_s, categories );
@@ -954,6 +990,9 @@ void TestQgsPointCloudEditing::testVPCCommitChanges()
   const QString vpcPath = dataPath + u"/combined.vpc"_s;
 
   auto layer = std::make_unique<QgsPointCloudLayer>( vpcPath, u"layer"_s, u"vpc"_s );
+  QgsVirtualPointCloudProvider *vpcProvider = qobject_cast<QgsVirtualPointCloudProvider *>( layer->dataProvider() );
+  QVERIFY( vpcProvider );
+  QSignalSpy spyLoading( vpcProvider, &QgsVirtualPointCloudProvider::subIndexLoaded );
 
   QVERIFY( layer->isValid() );
   QVERIFY( layer->startEditing() );
@@ -971,6 +1010,7 @@ void TestQgsPointCloudEditing::testVPCCommitChanges()
   QVERIFY( !subIndex0.index() );
 
   layer->dataProvider()->loadSubIndex( 0 );
+  QVERIFY( spyLoading.wait() );
   QVERIFY( layer->subIndexes().at( 0 ).index().isValid() );
   // check values before any changes
   std::unique_ptr<QgsPointCloudBlock> block0 = layer->subIndexes().at( 0 ).index().nodeData( n, request );
@@ -1039,11 +1079,15 @@ void TestQgsPointCloudEditing::testVPCCommitChanges()
 
   // try to open the file as a new layer and check saved values
   auto layerNew = std::make_unique<QgsPointCloudLayer>( vpcPath, u"layer"_s, u"vpc"_s );
+  QgsVirtualPointCloudProvider *vpcProviderNew = qobject_cast<QgsVirtualPointCloudProvider *>( layerNew->dataProvider() );
+  QVERIFY( vpcProviderNew );
+  QSignalSpy spyLoadingNew( vpcProviderNew, &QgsVirtualPointCloudProvider::subIndexLoaded );
 
   QSignalSpy spy2( layerNew.get(), &QgsMapLayer::layerModified );
 
   // check values in the new layer
   layerNew->dataProvider()->loadSubIndex( 0 );
+  QVERIFY( spyLoadingNew.wait() );
   std::unique_ptr<QgsPointCloudBlock> block3 = layerNew->subIndexes().at( 0 ).index().nodeData( n, request );
   const char *block3Data = block3->data();
 
@@ -1064,6 +1108,7 @@ void TestQgsPointCloudEditing::testVPCCommitChanges()
   mappedPoints.insert( 0, points );
 
   layerNew->dataProvider()->loadSubIndex( 1 );
+  QVERIFY( spyLoadingNew.wait() );
   std::unique_ptr<QgsPointCloudBlock> block4 = layerNew->subIndexes().at( 1 ).index().nodeData( n, request );
   const char *block4Data = block4->data();
 
@@ -1157,10 +1202,15 @@ void TestQgsPointCloudEditing::testVPCCommitChanges()
 
   // try to open the file as a new layer and check saved values
   auto layerNew2 = std::make_unique<QgsPointCloudLayer>( vpcPath, u"layer"_s, u"vpc"_s );
+  QgsVirtualPointCloudProvider *vpcProviderNew2 = qobject_cast<QgsVirtualPointCloudProvider *>( layerNew2->dataProvider() );
+  QVERIFY( vpcProviderNew2 );
+  QSignalSpy spyLoadingNew2( vpcProviderNew2, &QgsVirtualPointCloudProvider::subIndexLoaded );
 
   // check values in the new layer
   layerNew2->dataProvider()->loadSubIndex( 0 );
+  QVERIFY( spyLoadingNew2.wait() );
   layerNew2->dataProvider()->loadSubIndex( 1 );
+  QVERIFY( spyLoadingNew2.wait() );
   std::unique_ptr<QgsPointCloudBlock> block9 = layerNew2->subIndexes().at( 0 ).index().nodeData( n, request );
   const char *block9Data = block9->data();
   std::unique_ptr<QgsPointCloudBlock> block10 = layerNew2->subIndexes().at( 1 ).index().nodeData( n, request );

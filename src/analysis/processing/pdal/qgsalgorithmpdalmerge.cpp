@@ -75,6 +75,8 @@ void QgsPdalMergeAlgorithm::initAlgorithm( const QVariantMap & )
 
 QStringList QgsPdalMergeAlgorithm::createArgumentLists( const QVariantMap &parameters, QgsProcessingContext &context, QgsProcessingFeedback *feedback )
 {
+  QGS_MARK_ALGORITHM_SOURCE
+
   Q_UNUSED( feedback );
 
   const QList<QgsMapLayer *> layers = parameterAsLayerList( parameters, u"LAYERS"_s, context, QgsProcessing::LayerOptionsFlag::SkipIndexGeneration );
@@ -85,7 +87,7 @@ QStringList QgsPdalMergeAlgorithm::createArgumentLists( const QVariantMap &param
 
   const QString outputFile = parameterAsOutputLayer( parameters, u"OUTPUT"_s, context );
 
-  if ( outputFile.endsWith( u".vpc"_s, Qt::CaseInsensitive ) )
+  if ( isVpcFileName( outputFile ) )
     throw QgsProcessingException(
       QObject::tr(
         "This algorithm does not support output to VPC. Please use LAS or LAZ as the output format. "

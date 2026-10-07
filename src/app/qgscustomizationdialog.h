@@ -173,7 +173,7 @@ class APP_EXPORT QgsCustomizationDialog : public QMainWindow, private Ui::QgsCus
      * \brief tree view to edit a customization
      * \since QGIS 4.0
      */
-    class QgsCustomizationModel : public QAbstractItemModel
+    class APP_EXPORT QgsCustomizationModel : public QAbstractItemModel
     {
       public:
         enum class Mode
@@ -208,11 +208,6 @@ class APP_EXPORT QgsCustomizationDialog : public QMainWindow, private Ui::QgsCus
         void deleteUserItems( const QModelIndexList &indexes );
 
         /**
-       * Initialize (or reinitialize if already initialized) model
-       */
-        void init();
-
-        /**
        * Reset all current modifications
        */
         void reset();
@@ -234,6 +229,29 @@ class APP_EXPORT QgsCustomizationDialog : public QMainWindow, private Ui::QgsCus
         const std::unique_ptr<QgsCustomization> &customization() const;
 
       private:
+        /**
+         * Called whenever user drop some mime \a data representing a QgsActionItem on
+         * \a parent at \a row position
+         */
+        bool dropMimeDataActions( const QMimeData *data, int row, const QModelIndex &parent );
+
+        /**
+         * Called whenever user drop some mime \a data representing a QgsProcessingAlgorithmItem on
+         * \a parent at \a row position
+         */
+        bool dropMimeDataProcessingAlgorithms( const QMimeData *data, int row, const QModelIndex &parent );
+
+        /**
+         * Initialize (or reinitialize if already initialized) model using QgisApp
+         * customization object
+         */
+        void initFromQgisApp();
+
+        /**
+         * Initialize model root items from current customization object
+         */
+        void initRootItems();
+
         Mode mMode = Mode::ActionSelector;
         QgisApp *mQgisApp = nullptr;
         std::unique_ptr<QgsCustomization> mCustomization; // current customization, copy of the application one

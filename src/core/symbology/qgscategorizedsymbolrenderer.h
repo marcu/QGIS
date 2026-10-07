@@ -181,6 +181,9 @@ typedef QList<QgsRendererCategory> QgsCategoryList;
 class CORE_EXPORT QgsCategorizedSymbolRenderer : public QgsFeatureRenderer
 {
   public:
+    using Category = QgsRendererCategory;
+    using Categories = QgsCategoryList;
+
     /**
      * Constructor for QgsCategorizedSymbolRenderer.
      *
@@ -339,7 +342,7 @@ class CORE_EXPORT QgsCategorizedSymbolRenderer : public QgsFeatureRenderer
     /**
      * Creates a categorized renderer from an XML \a element.
      */
-    static QgsFeatureRenderer *create( QDomElement &element, const QgsReadWriteContext &context ) SIP_FACTORY;
+    static std::unique_ptr<QgsFeatureRenderer> create( QDomElement &element, const QgsReadWriteContext &context );
 
     QDomElement save( QDomDocument &doc, const QgsReadWriteContext &context ) override;
     QgsLegendSymbolList legendSymbolItems() const override;
@@ -404,6 +407,7 @@ class CORE_EXPORT QgsCategorizedSymbolRenderer : public QgsFeatureRenderer
     bool legendSymbolItemsCheckable() const override;
     bool legendSymbolItemChecked( const QString &key ) override;
     void setLegendSymbolItem( const QString &key, QgsSymbol *symbol SIP_TRANSFER ) override;
+    void setLegendSymbolItemLabel( const QString &key, const QString &label ) override;
     void checkLegendSymbolItem( const QString &key, bool state = true ) override;
     QString legendClassificationAttribute() const override { return classAttribute(); }
 
@@ -414,7 +418,7 @@ class CORE_EXPORT QgsCategorizedSymbolRenderer : public QgsFeatureRenderer
      *
      * \returns a new renderer if the conversion was possible, otherwise NULLPTR.
      */
-    static QgsCategorizedSymbolRenderer *convertFromRenderer( const QgsFeatureRenderer *renderer, QgsVectorLayer *layer = nullptr ) SIP_FACTORY;
+    static std::unique_ptr<QgsCategorizedSymbolRenderer> convertFromRenderer( const QgsFeatureRenderer *renderer, QgsVectorLayer *layer = nullptr );
 
     /**
      * Configures appearance of legend when renderer is configured to use data-defined size for marker symbols.
@@ -489,6 +493,9 @@ class CORE_EXPORT QgsCategorizedSymbolRenderer : public QgsFeatureRenderer
 
     //! attribute index (derived from attribute name in startRender)
     int mAttrNum = -1;
+
+    //! whether the attribute is numeric (derived from attribute name in startRender)
+    bool mAttrIsNumeric = false;
 
     //! hashtable for faster access to symbols
     QHash<QString, QgsSymbol *> mSymbolHash;

@@ -468,9 +468,6 @@ class GUI_EXPORT QgsExpressionBuilderWidget : public QWidget, private Ui::QgsExp
      */
     void parserErrorChanged();
 
-  protected:
-    void showEvent( QShowEvent *e ) override;
-
   private:
     class ExpressionTreeMenuProvider : public QgsExpressionTreeView::MenuProvider
     {
@@ -509,7 +506,7 @@ class GUI_EXPORT QgsExpressionBuilderWidget : public QWidget, private Ui::QgsExp
     std::unique_ptr<QStandardItemModel> mValuesModel;
     std::unique_ptr<QSortFilterProxyModel> mProxyValues;
 
-    ExpressionTreeMenuProvider *mExpressionTreeMenuProvider = nullptr;
+    ExpressionTreeMenuProvider mExpressionTreeMenuProvider;
 
     bool mAutoSave = true;
     QString mFunctionsPath;

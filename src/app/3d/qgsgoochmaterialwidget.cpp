@@ -18,12 +18,18 @@
 #include "qgis.h"
 #include "qgsgoochmaterialsettings.h"
 
+#include <QString>
+
 #include "moc_qgsgoochmaterialwidget.cpp"
+
+using namespace Qt::StringLiterals;
 
 QgsGoochMaterialWidget::QgsGoochMaterialWidget( QWidget *parent )
   : QgsMaterialSettingsWidget( parent )
 {
   setupUi( this );
+  mPreviewWidget->hide();
+  mPreviewWidget->setMaterialType( u"gooch"_s );
 
   QgsGoochMaterialSettings defaultMaterial;
   setSettings( &defaultMaterial, nullptr );
@@ -46,6 +52,8 @@ QgsGoochMaterialWidget::QgsGoochMaterialWidget( QWidget *parent )
   connect( mWarmDataDefinedButton, &QgsPropertyOverrideButton::changed, this, &QgsGoochMaterialWidget::changed );
   connect( mCoolDataDefinedButton, &QgsPropertyOverrideButton::changed, this, &QgsGoochMaterialWidget::changed );
   connect( mSpecularDataDefinedButton, &QgsPropertyOverrideButton::changed, this, &QgsGoochMaterialWidget::changed );
+
+  connect( this, &QgsGoochMaterialWidget::changed, this, &QgsGoochMaterialWidget::updatePreview );
 }
 
 QgsMaterialSettingsWidget *QgsGoochMaterialWidget::create()
@@ -72,35 +80,11 @@ void QgsGoochMaterialWidget::setSettings( const QgsAbstractMaterialSettings *set
   mWarmDataDefinedButton->init( static_cast<int>( QgsAbstractMaterialSettings::Property::Warm ), mPropertyCollection, settings->propertyDefinitions(), layer, true );
   mCoolDataDefinedButton->init( static_cast<int>( QgsAbstractMaterialSettings::Property::Cool ), mPropertyCollection, settings->propertyDefinitions(), layer, true );
   mSpecularDataDefinedButton->init( static_cast<int>( QgsAbstractMaterialSettings::Property::Specular ), mPropertyCollection, settings->propertyDefinitions(), layer, true );
+
+  updatePreview();
 }
 
-void QgsGoochMaterialWidget::setTechnique( Qgis::MaterialRenderingTechnique technique )
-{
-  switch ( technique )
-  {
-    case Qgis::MaterialRenderingTechnique::Triangles:
-    case Qgis::MaterialRenderingTechnique::TrianglesFromModel:
-    case Qgis::MaterialRenderingTechnique::InstancedPoints:
-    case Qgis::MaterialRenderingTechnique::Points:
-    case Qgis::MaterialRenderingTechnique::TrianglesWithFixedTexture:
-      mDiffuseDataDefinedButton->setVisible( false );
-      mWarmDataDefinedButton->setVisible( false );
-      mCoolDataDefinedButton->setVisible( false );
-      mSpecularDataDefinedButton->setVisible( false );
-      break;
-    case Qgis::MaterialRenderingTechnique::TrianglesDataDefined:
-      mDiffuseDataDefinedButton->setVisible( true );
-      mWarmDataDefinedButton->setVisible( true );
-      mCoolDataDefinedButton->setVisible( true );
-      mSpecularDataDefinedButton->setVisible( true );
-      break;
-    case Qgis::MaterialRenderingTechnique::Lines:
-      // not supported
-      break;
-  }
-}
-
-QgsAbstractMaterialSettings *QgsGoochMaterialWidget::settings()
+std::unique_ptr<QgsAbstractMaterialSettings> QgsGoochMaterialWidget::settings()
 {
   auto m = std::make_unique<QgsGoochMaterialSettings>();
   m->setDiffuse( btnDiffuse->color() );
@@ -117,5 +101,70 @@ QgsAbstractMaterialSettings *QgsGoochMaterialWidget::settings()
   mPropertyCollection.setProperty( QgsAbstractMaterialSettings::Property::Specular, mSpecularDataDefinedButton->toProperty() );
   m->setDataDefinedProperties( mPropertyCollection );
 
-  return m.release();
+  return m;
+}
+
+void QgsGoochMaterialWidget::setPreviewVisible( bool visible )
+{
+  mPreviewWidget->setVisible( visible );
+  if ( !visible )
+  {
+    mVerticalSpacer->changeSize( 0, 0, QSizePolicy::Fixed, QSizePolicy::Fixed );
+  }
+  else
+  {
+    mVerticalSpacer->changeSize( 20, 40, QSizePolicy::Minimum, QSizePolicy::Expanding );
+  }
+  updatePreview();
+}
+
+void QgsGoochMaterialWidget::updatePreview()
+{
+  if ( mPreviewWidget->isHidden() )
+    return;
+  const std::unique_ptr<QgsAbstractMaterialSettings> newSettings( settings() );
+  mPreviewWidget->updatePreview( newSettings.get() );
+}
+
+void QgsGoochMaterialWidget::updateWidgetVisibility()
+{
+  const bool hasDataDefined = ( mTechnique == Qgis::MaterialRenderingTechnique::TrianglesDataDefined );
+  const bool fullMode = ( mMode == Qgis::MaterialWidgetMode::Full );
+
+  // diffuse
+  mDiffuseDataDefinedButton->setVisible( hasDataDefined );
+
+  // warm
+  mWarmDataDefinedButton->setVisible( hasDataDefined );
+
+  // cool
+  lblAmbient_2->setVisible( fullMode );
+  btnCool->setVisible( fullMode );
+  mCoolDataDefinedButton->setVisible( fullMode && hasDataDefined );
+
+  // specular
+  lblSpecular->setVisible( fullMode );
+  btnSpecular->setVisible( fullMode );
+  mSpecularDataDefinedButton->setVisible( fullMode && hasDataDefined );
+
+  // shininess
+  lblShininess->setVisible( fullMode );
+  spinShininess->setVisible( fullMode );
+
+  // alpha
+  lblShininess_2->setVisible( fullMode );
+  spinAlpha->setVisible( fullMode );
+
+  // beta
+  lblShininess_3->setVisible( fullMode );
+  spinBeta->setVisible( fullMode );
+
+  if ( fullMode )
+  {
+    gridLayout->setVerticalSpacing( -1 );
+  }
+  else
+  {
+    gridLayout->setVerticalSpacing( 3 );
+  }
 }

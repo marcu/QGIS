@@ -26,6 +26,7 @@ class QColor;
 class QLineEdit;
 class QToolButton;
 class QgsDoubleSpinBox;
+template<class T> class QgsSettingsEntryEnumFlag;
 
 /**
  * \ingroup gui
@@ -400,6 +401,10 @@ class GUI_EXPORT QgsColorWheel : public QgsColorWidget
     void mousePressEvent( QMouseEvent *event ) override;
     void mouseReleaseEvent( QMouseEvent *event ) override;
 
+  private slots:
+
+    void invalidateImages();
+
   private:
     enum ControlPart
     {
@@ -504,7 +509,7 @@ class GUI_EXPORT QgsColorBox : public QgsColorWidget
     static constexpr float mMargin = 2.;
 
     /*Cached image for color box*/
-    QImage *mBoxImage = nullptr;
+    std::unique_ptr<QImage> mBoxImage;
 
     /*Whether the cached image requires redrawing*/
     bool mDirty = true;
@@ -777,6 +782,8 @@ class GUI_EXPORT QgsColorTextWidget : public QgsColorWidget
       Rgba        //!< Rgba( r, g, b, a ) format, with alpha
     };
     Q_ENUM( ColorTextFormat )
+
+    static const QgsSettingsEntryEnumFlag<ColorTextFormat> *settingsTextFormat SIP_SKIP;
 
     /**
      * Construct a new color line edit widget.

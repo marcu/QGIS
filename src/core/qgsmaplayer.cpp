@@ -69,7 +69,6 @@
 #include <QTextStream>
 #include <QTimer>
 #include <QUrl>
-#include <QUuid>
 #include <QXmlStreamReader>
 
 #include "moc_qgsmaplayer.cpp"
@@ -96,7 +95,7 @@ QgsMapLayer::QgsMapLayer( Qgis::LayerType type, const QString &lyrname, const QS
   , mServerProperties( std::make_unique<QgsMapLayerServerProperties>( this ) )
   , mUndoStack( new QUndoStack( this ) )
   , mUndoStackStyles( new QUndoStack( this ) )
-  , mStyleManager( std::make_unique<QgsMapLayerStyleManager>( this ) )
+  , mStyleManager( new QgsMapLayerStyleManager( this ) )
   , mRefreshTimer( new QTimer( this ) )
 {
   mID = generateId( lyrname );
@@ -157,7 +156,7 @@ void QgsMapLayer::clone( QgsMapLayer *layer ) const
   layer->setCustomProperties( mCustomProperties );
   layer->setOpacity( mLayerOpacity );
   layer->setMetadata( mMetadata );
-  layer->serverProperties()->copyTo( mServerProperties.get() );
+  mServerProperties->copyTo( layer->serverProperties() );
 }
 
 Qgis::LayerType QgsMapLayer::type() const
@@ -578,6 +577,10 @@ bool QgsMapLayer::readLayerXml( const QDomElement &layerElement, QgsReadWriteCon
   QGIS_PROTECT_QOBJECT_THREAD_ACCESS
 
   mPreloadedProvider.reset( preloadedProvider );
+  if ( mPreloadedProvider )
+  {
+    QGIS_CHECK_QOBJECT_THREAD_EQUALITY( mPreloadedProvider.get() );
+  }
 
   bool layerError;
   mReadFlags = flags;
@@ -1635,7 +1638,13 @@ QString QgsMapLayer::loadNamedProperty( const QString &uri, QgsMapLayer::Propert
   }
   else
   {
-    const QFileInfo project( QgsProject::instance()->fileName() ); // skip-keyword-check
+    QString projectFileName;
+    if ( QgsProject *lProject = project() )
+    {
+      projectFileName = lProject->fileName();
+    }
+
+    const QFileInfo project( projectFileName );
     QgsDebugMsgLevel( u"project fileName: %1"_s.arg( project.absoluteFilePath() ), 4 );
 
     QString xml;
@@ -2295,6 +2304,7 @@ QString QgsMapLayer::loadSldStyle( const QString &uri, bool &resultFlag )
   if ( myFile.open( QFile::ReadOnly ) )
   {
     // read file
+#if QT_VERSION >= QT_VERSION_CHECK( 6, 5, 0 )
     QXmlStreamReader xmlReader( &myFile );
     xmlReader.addExtraNamespaceDeclaration( QXmlStreamNamespaceDeclaration( u"sld"_s, u"http://www.opengis.net/sld"_s ) );
     xmlReader.addExtraNamespaceDeclaration( QXmlStreamNamespaceDeclaration( u"fes"_s, u"http://www.opengis.net/fes/2.0"_s ) );
@@ -2310,6 +2320,9 @@ QString QgsMapLayer::loadSldStyle( const QString &uri, bool &resultFlag )
       line = result.errorLine;
       column = result.errorColumn;
     }
+#else
+    resultFlag = myDocument.setContent( &myFile, true, &myErrorMessage, &line, &column );
+#endif
     if ( !resultFlag )
       myErrorMessage = tr( "%1 at line %2 column %3" ).arg( myErrorMessage ).arg( line ).arg( column );
     myFile.close();
@@ -2769,11 +2782,18 @@ bool QgsMapLayer::isTemporary() const
   if ( path.isEmpty() )
     return false;
 
+  const QFileInfo fileInfo( path );
+  const QString cleanedPath = QDir::cleanPath( fileInfo.canonicalFilePath() );
+
   // check if layer path is inside one of the standard temporary file locations for this platform
   const QStringList tempPaths = QStandardPaths::standardLocations( QStandardPaths::TempLocation );
-  for ( const QString &tempPath : tempPaths )
+  for ( const QString &tempPath : std::as_const( tempPaths ) )
   {
-    if ( path.startsWith( tempPath ) )
+#if defined( Q_OS_WIN )
+    if ( cleanedPath.startsWith( tempPath, Qt::CaseSensitivity::CaseInsensitive ) )
+#else
+    if ( cleanedPath.startsWith( tempPath, Qt::CaseSensitivity::CaseSensitive ) )
+#endif
       return true;
   }
 
@@ -2795,16 +2815,16 @@ void QgsMapLayer::setLegend( QgsMapLayerLegend *legend )
 {
   QGIS_PROTECT_QOBJECT_THREAD_ACCESS
 
-  if ( legend == mLegend.get() )
+  if ( legend == mLegend )
     return;
 
-  mLegend.reset( legend );
-
+  delete mLegend;
+  mLegend = legend;
 
   if ( mLegend )
   {
     mLegend->setParent( this );
-    connect( mLegend.get(), &QgsMapLayerLegend::itemsChanged, this, &QgsMapLayer::legendChanged, Qt::UniqueConnection );
+    connect( mLegend, &QgsMapLayerLegend::itemsChanged, this, &QgsMapLayer::legendChanged, Qt::UniqueConnection );
   }
 
   emit legendChanged();
@@ -2814,14 +2834,14 @@ QgsMapLayerLegend *QgsMapLayer::legend() const
 {
   QGIS_PROTECT_QOBJECT_THREAD_ACCESS
 
-  return mLegend.get();
+  return mLegend;
 }
 
 QgsMapLayerStyleManager *QgsMapLayer::styleManager() const
 {
   QGIS_PROTECT_QOBJECT_THREAD_ACCESS
 
-  return mStyleManager.get();
+  return mStyleManager;
 }
 
 void QgsMapLayer::setRenderer3D( QgsAbstract3DRenderer *renderer )
@@ -2834,7 +2854,6 @@ void QgsMapLayer::setRenderer3D( QgsAbstract3DRenderer *renderer )
   m3DRenderer.reset( renderer );
 
   emit renderer3DChanged();
-  emit repaintRequested();
   trigger3DUpdate();
 }
 
@@ -2929,19 +2948,14 @@ void QgsMapLayer::setOriginalXmlProperties( const QString &originalXmlProperties
 
 QString QgsMapLayer::generateId( const QString &layerName )
 {
-  // Generate the unique ID of this layer
-  const QString uuid = QUuid::createUuid().toString();
-  // trim { } from uuid
-  QString id = layerName + '_' + uuid.mid( 1, uuid.length() - 2 );
-  // Tidy the ID up to avoid characters that may cause problems
-  // elsewhere (e.g in some parts of XML). Replaces every non-word
-  // character (word characters are the alphabet, numbers and
-  // underscore) with an underscore.
-  // Note that the first backslash in the regular expression is
-  // there for the compiler, so the pattern is actually \W
-  const thread_local QRegularExpression idRx( u"[\\W]"_s );
-  id.replace( idRx, u"_"_s );
-  return id;
+  constexpr int UUID_SUFFIX_LENGTH = 36 + 1;
+  constexpr int MAX_ID_LENGTH = 100;
+  constexpr int MAX_PREFIX_LENGTH = MAX_ID_LENGTH - UUID_SUFFIX_LENGTH;
+
+  // cap length of layer name to avoid potentially huge names
+  const QString prefix = layerName.left( MAX_PREFIX_LENGTH );
+
+  return QgsStringUtils::createUniqueId( prefix );
 }
 
 bool QgsMapLayer::accept( QgsStyleEntityVisitorInterface * ) const

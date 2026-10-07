@@ -19,11 +19,9 @@ __author__ = "Alexander Bruy"
 __date__ = "December 2012"
 __copyright__ = "(C) 2012, Alexander Bruy"
 
-import codecs
 import inspect
 import os
 import traceback
-import warnings
 
 from qgis.core import (
     QgsApplication,
@@ -33,27 +31,28 @@ from qgis.core import (
     QgsProcessingFeatureBasedAlgorithm,
     QgsSettings,
 )
-from qgis.gui import QgsCodeEditorWidget, QgsErrorDialog, QgsGui, QgsShortcutsManager
+from qgis.gui import (
+    QgsCodeEditorWidget,
+    QgsErrorDialog,
+    QgsGui,
+    QgsProcessingAlgorithmWidgetBase,
+    QgsProcessingScriptEditorDialog,
+    QgsShortcutsManager,
+)
 from qgis.processing import alg as algfactory
-from qgis.PyQt import sip, uic
+from qgis.PyQt import sip
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QPalette
 from qgis.PyQt.QtWidgets import QFileDialog, QMessageBox, QVBoxLayout
-from qgis.utils import OverrideCursor, iface
+from qgis.utils import OverrideCursor
 
-from processing.gui.AlgorithmDialog import AlgorithmDialog
+from processing.gui.algorithm_widget import AlgorithmWidget
 from processing.script import ScriptUtils
 
 from .ScriptEdit import ScriptEdit
 
-pluginPath = os.path.split(os.path.dirname(__file__))[0]
 
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
-    WIDGET, BASE = uic.loadUiType(os.path.join(pluginPath, "ui", "DlgScriptEditor.ui"))
-
-
-class ScriptEditorDialog(BASE, WIDGET):
+class ScriptEditorDialog(QgsProcessingScriptEditorDialog):
     hasChanged = False
 
     DIALOG_STORE = []
@@ -74,85 +73,58 @@ class ScriptEditorDialog(BASE, WIDGET):
 
         self.destroyed.connect(clean_up_store)
 
-        self.setupUi(self)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-
-        QgsGui.instance().enableAutoGeometryRestore(self)
 
         vl = QVBoxLayout()
         vl.setContentsMargins(0, 0, 0, 0)
-        self.editor_container.setLayout(vl)
+        self.editorContainer().setLayout(vl)
 
         self.editor = ScriptEdit()
         self.code_editor_widget = QgsCodeEditorWidget(self.editor)
         vl.addWidget(self.code_editor_widget)
 
-        if iface is not None:
-            self.toolBar.setIconSize(iface.iconSize())
-            self.setStyleSheet(iface.mainWindow().styleSheet())
-
-        self.actionOpenScript.setIcon(
-            QgsApplication.getThemeIcon("/mActionScriptOpen.svg")
-        )
-        self.actionSaveScript.setIcon(
-            QgsApplication.getThemeIcon("/mActionFileSave.svg")
-        )
-        self.actionSaveScriptAs.setIcon(
-            QgsApplication.getThemeIcon("/mActionFileSaveAs.svg")
-        )
-        self.actionRunScript.setIcon(QgsApplication.getThemeIcon("/mActionStart.svg"))
-        self.actionCut.setIcon(QgsApplication.getThemeIcon("/mActionEditCut.svg"))
-        self.actionCopy.setIcon(QgsApplication.getThemeIcon("/mActionEditCopy.svg"))
-        self.actionPaste.setIcon(QgsApplication.getThemeIcon("/mActionEditPaste.svg"))
-        self.actionUndo.setIcon(QgsApplication.getThemeIcon("/mActionUndo.svg"))
-        self.actionRedo.setIcon(QgsApplication.getThemeIcon("/mActionRedo.svg"))
-        self.actionFindReplace.setIcon(
-            QgsApplication.getThemeIcon("/mActionFindReplace.svg")
-        )
-        self.actionIncreaseFontSize.setIcon(
-            QgsApplication.getThemeIcon("/mActionIncreaseFont.svg")
-        )
-        self.actionDecreaseFontSize.setIcon(
-            QgsApplication.getThemeIcon("/mActionDecreaseFont.svg")
-        )
-        self.actionToggleComment.setIcon(
+        self.actionToggleComment().setIcon(
             QgsApplication.getThemeIcon(
                 "console/iconCommentEditorConsole.svg",
                 self.palette().color(QPalette.ColorRole.WindowText),
             )
         )
         QgsGui.shortcutsManager().initializeCommonAction(
-            self.actionToggleComment, QgsShortcutsManager.CommonAction.CodeToggleComment
+            self.actionToggleComment(),
+            QgsShortcutsManager.CommonAction.CodeToggleComment,
         )
 
         # Connect signals and slots
-        self.actionOpenScript.triggered.connect(self.openScript)
-        self.actionSaveScript.triggered.connect(self.save)
-        self.actionSaveScriptAs.triggered.connect(self.saveAs)
-        self.actionRunScript.triggered.connect(self.runAlgorithm)
-        self.actionCut.triggered.connect(self.editor.cut)
-        self.actionCopy.triggered.connect(self.editor.copy)
-        self.actionPaste.triggered.connect(self.editor.paste)
-        self.actionUndo.triggered.connect(self.editor.undo)
-        self.actionRedo.triggered.connect(self.editor.redo)
-        self.actionFindReplace.toggled.connect(
+        self.actionOpenScript().triggered.connect(self.openScript)
+        self.actionSaveScript().triggered.connect(self.save)
+        self.actionSaveScriptAs().triggered.connect(self.saveAs)
+        self.actionRunScript().triggered.connect(self.runAlgorithm)
+        self.actionCut().triggered.connect(self.editor.cut)
+        self.actionCopy().triggered.connect(self.editor.copy)
+        self.actionPaste().triggered.connect(self.editor.paste)
+        self.actionUndo().triggered.connect(self.editor.undo)
+        self.actionRedo().triggered.connect(self.editor.redo)
+        self.actionFindReplace().toggled.connect(
             self.code_editor_widget.setSearchBarVisible
         )
         self.code_editor_widget.searchBarToggled.connect(
-            self.actionFindReplace.setChecked
+            self.actionFindReplace().setChecked
         )
 
-        self.actionIncreaseFontSize.triggered.connect(self.editor.zoomIn)
-        self.actionDecreaseFontSize.triggered.connect(self.editor.zoomOut)
-        self.actionToggleComment.triggered.connect(self.editor.toggleComment)
+        self.actionIncreaseFontSize().triggered.connect(self.editor.zoomIn)
+        self.actionDecreaseFontSize().triggered.connect(self.editor.zoomOut)
+        self.actionToggleComment().triggered.connect(self.editor.toggleComment)
         self.editor.modificationChanged.connect(self._on_text_modified)
 
-        self.run_dialog = None
+        self.run_widget = None
 
         if filePath is not None:
             self._loadFile(filePath)
 
         self.setHasChanged(False)
+
+    def codeEditor(self):
+        return self.editor
 
     def update_dialog_title(self):
         """
@@ -253,13 +225,13 @@ class ScriptEditorDialog(BASE, WIDGET):
 
     def setHasChanged(self, hasChanged):
         self.hasChanged = hasChanged
-        self.actionSaveScript.setEnabled(hasChanged)
+        self.actionSaveScript().setEnabled(hasChanged)
         self.update_dialog_title()
 
     def runAlgorithm(self):
-        if self.run_dialog and not sip.isdeleted(self.run_dialog):
-            self.run_dialog.close()
-            self.run_dialog = None
+        if self.run_widget and not sip.isdeleted(self.run_widget):
+            self.run_widget.close()
+            self.run_widget = None
 
         _locals = {}
         try:
@@ -300,21 +272,15 @@ class ScriptEditorDialog(BASE, WIDGET):
         alg.setProvider(QgsApplication.processingRegistry().providerById("script"))
         alg.initAlgorithm()
 
-        self.run_dialog = alg.createCustomParametersWidget(self)
-        if not self.run_dialog:
-            self.run_dialog = AlgorithmDialog(alg, parent=self)
+        self.run_widget = alg.createCustomParametersWidget(self)
+        if not self.run_widget:
+            self.run_widget = AlgorithmWidget(
+                alg,
+                parent=self,
+                flags=QgsProcessingAlgorithmWidgetBase.WidgetFlag.NoDocking,
+            )
 
-        canvas = iface.mapCanvas()
-        prevMapTool = canvas.mapTool()
-
-        self.run_dialog.show()
-
-        if canvas.mapTool() != prevMapTool:
-            try:
-                canvas.mapTool().reset()
-            except:
-                pass
-            canvas.setMapTool(prevMapTool)
+        self.run_widget.show()
 
     def _loadFile(self, filePath):
 

@@ -18,7 +18,12 @@
 
 #include <map>
 
+#include "qgis_3d.h"
+#include "qgsabstractrenderview.h"
+
+#include <QSize>
 #include <QWindow>
+#include <Qt3DRender/QBlitFramebuffer>
 #include <Qt3DRender/QCamera>
 #include <Qt3DRender/QCameraSelector>
 #include <Qt3DRender/QClearBuffers>
@@ -31,6 +36,7 @@
 #include <Qt3DRender/QParameter>
 #include <Qt3DRender/QPolygonOffset>
 #include <Qt3DRender/QRenderCapture>
+#include <Qt3DRender/QRenderPassFilter>
 #include <Qt3DRender/QRenderStateSet>
 #include <Qt3DRender/QRenderSurfaceSelector>
 #include <Qt3DRender/QRenderTarget>
@@ -40,8 +46,12 @@
 
 #define SIP_NO_FILE
 
+namespace Qt3DRender
+{
+  class QRenderCaptureReply;
+}
+
 class Qgs3DMapSettings;
-class QgsAbstractRenderView;
 class QgsAmbientOcclusionRenderView;
 class QgsAmbientOcclusionSettings;
 class QgsCameraController;
@@ -53,10 +63,14 @@ class QgsLightSource;
 class QgsOverlayTextureEntity;
 class QgsOverlayTextureRenderView;
 class QgsPostprocessingEntity;
+class QgsPostprocessingRenderView;
+class QgsRubberBandRenderView;
 class QgsRectangle;
 class QgsShadowRenderView;
 class QgsShadowSettings;
-
+class QgsBloomRenderView;
+class QgsBloomSettings;
+class QgsColorGradingSettings;
 
 /**
  * \ingroup qgis_3d
@@ -68,7 +82,7 @@ class QgsShadowSettings;
  *
  * \since QGIS 3.16
  */
-class QgsFrameGraph : public Qt3DCore::QEntity
+class _3D_EXPORT QgsFrameGraph : public Qt3DCore::QEntity
 {
     Q_OBJECT
 
@@ -82,17 +96,14 @@ class QgsFrameGraph : public Qt3DCore::QEntity
     //! Returns the main camera
     Qt3DRender::QCamera *mainCamera() { return mMainCamera; }
 
-    //! Returns the postprocessing entity
-    QgsPostprocessingEntity *postprocessingEntity() { return mPostprocessingEntity; }
-
-    //! Returns entity for all rubber bands (to show them always on top)
-    Qt3DCore::QEntity *rubberBandsRootEntity() { return mRubberBandsRootEntity; }
-
     //! Returns the render capture object used to take an image of the scene
     Qt3DRender::QRenderCapture *renderCapture();
 
     //! Returns the render capture object used to take an image of the depth buffer of the scene
     Qt3DRender::QRenderCapture *depthRenderCapture();
+
+    //! Adds additional global \a parameters to the graph
+    void addGlobalParameters( const QList<Qt3DRender::QParameter *> &parameters );
 
     //! Sets whether frustum culling is enabled
     void setFrustumCullingEnabled( bool enabled );
@@ -114,6 +125,18 @@ class QgsFrameGraph : public Qt3DCore::QEntity
      * \since QGIS 3.26
      */
     void setDebugOverlayEnabled( bool enabled );
+
+    /**
+     * Sets whether multisample anti-aliasing (MSAA) is enabled
+     * \since QGIS 4.2
+     */
+    void setMsaaEnabled( bool enabled );
+
+    /**
+     * Returns whether multisample anti-aliasing (MSAA) is enabled
+     * \since QGIS 4.2
+     */
+    bool msaaEnabled() const { return mMsaaEnabled; }
 
     //! Dumps frame graph as string
     QString dumpFrameGraph() const;
@@ -196,6 +219,12 @@ class QgsFrameGraph : public Qt3DCore::QEntity
     QgsAmbientOcclusionRenderView &ambientOcclusionRenderView();
 
     /**
+     * Returns the bloom render view.
+     * \since QGIS 4.2
+     */
+    QgsBloomRenderView &bloomRenderView();
+
+    /**
      * Returns overlay texture renderview
      * \since QGIS 4.0
      */
@@ -208,16 +237,22 @@ class QgsFrameGraph : public Qt3DCore::QEntity
     QgsHighlightsRenderView &highlightsRenderView();
 
     /**
+     * Returns post processing renderview
+     * \since QGIS 4.2
+     */
+    QgsPostprocessingRenderView &postprocessingRenderView();
+
+    /**
+     * Returns rubber band renderview
+     * \since QGIS 4.4
+     */
+    QgsRubberBandRenderView &rubberBandRenderView();
+
+    /**
      * Updates shadow bias, light and texture size according to \a shadowSettings and \a lightSources
      * \since QGIS 3.44
      */
-    void updateShadowSettings( const QgsShadowSettings &shadowSettings, const QList<QgsLightSource *> &lightSources );
-
-    /**
-     * Updates settings for shadows debug map
-     * \since QGIS 3.44
-     */
-    void updateDebugShadowMapSettings( const Qgs3DMapSettings &settings );
+    void updateShadowSettings( const Qgs3DMapSettings &mapSettings );
 
     /**
      * Updates settings for depth debug map
@@ -237,14 +272,31 @@ class QgsFrameGraph : public Qt3DCore::QEntity
      */
     void updateEyeDomeSettings( const Qgs3DMapSettings &settings );
 
-    static const QString FORWARD_RENDERVIEW;
-    static const QString SHADOW_RENDERVIEW;
-    static const QString AXIS3D_RENDERVIEW;
-    static const QString DEPTH_RENDERVIEW;
-    static const QString OVERLAY_RENDERVIEW;
+    /**
+     * Updates settings for the bloom lighting effect.
+     * \since QGIS 4.2
+     */
+    void updateBloomSettings( const QgsBloomSettings &settings );
+
+    /**
+     * Updates settings for color grading.
+     *
+     * \since QGIS 4.2
+     */
+    void updateColorGradingSettings( const QgsColorGradingSettings &settings );
+
+    static const QString sForwardRenderView;
+    static const QString sShadowRenderView;
+    static const QString sAxiS3DRenderView;
+    static const QString sDepthRenderView;
+    static const QString sOverlayRenderView;
     //! Ambient occlusion render view name
-    static const QString AMBIENT_OCCLUSION_RENDERVIEW;
-    static const QString HIGHLIGHTS_RENDERVIEW;
+    static const QString sAmbientOcclusionRenderView;
+    static const QString sBloomRenderView;
+    //! Postprocessing render view name
+    static const QString sPostprocRenderView;
+    static const QString sHighlightsRenderView;
+    static const QString sRubberRenderView;
 
   private:
     Qt3DRender::QRenderSurfaceSelector *mRenderSurfaceSelector = nullptr;
@@ -252,18 +304,16 @@ class QgsFrameGraph : public Qt3DCore::QEntity
 
     Qt3DRender::QCamera *mMainCamera = nullptr;
 
-    // Post processing pass branch nodes:
-    Qt3DRender::QRenderTargetSelector *mRenderCaptureTargetSelector = nullptr;
-    Qt3DRender::QRenderCapture *mRenderCapture = nullptr;
-    // Post processing pass texture related objects:
-    Qt3DRender::QTexture2D *mRenderCaptureColorTexture = nullptr;
-    Qt3DRender::QTexture2D *mRenderCaptureDepthTexture = nullptr;
+    // Storage for global parameters
+    // QRenderPassFilter has dual usage -- one for storage of filtering keys,
+    // the other for storage of parameters for use in shaders. Here we are
+    // using it for storage of parameters only, not for filtering!
+    Qt3DRender::QRenderPassFilter *mGlobalParamsStorage = nullptr;
 
-    // Rubber bands pass
-    Qt3DRender::QCameraSelector *mRubberBandsCameraSelector = nullptr;
-    Qt3DRender::QLayerFilter *mRubberBandsLayerFilter = nullptr;
-    Qt3DRender::QRenderStateSet *mRubberBandsStateSet = nullptr;
-    Qt3DRender::QRenderTargetSelector *mRubberBandsRenderTargetSelector = nullptr;
+    // Separate thumbnail capture pass to save scaled-down images of the
+    // rendered view to aid in debugging (e.g., Tracy profiler frame images).
+    Qt3DRender::QRenderCapture *mThumbnailCapture = nullptr;
+    Qt3DRender::QTexture2D *mThumbnailTexture = nullptr;
 
     QSize mSize = QSize( 1024, 768 );
 
@@ -271,14 +321,6 @@ class QgsFrameGraph : public Qt3DCore::QEntity
 
     Qt3DCore::QEntity *mRootEntity = nullptr;
 
-    Qt3DRender::QLayer *mRubberBandsLayer = nullptr;
-
-    QgsPostprocessingEntity *mPostprocessingEntity = nullptr;
-
-    Qt3DCore::QEntity *mRubberBandsRootEntity = nullptr;
-
-    //! shadow texture debugging
-    QgsOverlayTextureEntity *mShadowTextureDebugging = nullptr;
     //! depth texture debugging
     QgsOverlayTextureEntity *mDepthTextureDebugging = nullptr;
 
@@ -286,15 +328,22 @@ class QgsFrameGraph : public Qt3DCore::QEntity
     void constructForwardRenderPass();
     void constructHighlightsPass();
     void constructOverlayTexturePass( Qt3DRender::QFrameGraphNode *topNode = nullptr );
-    Qt3DRender::QFrameGraphNode *constructPostprocessingPass();
+    void constructPostprocessingPass( Qt3DRender::QFrameGraphNode *topNode = nullptr );
     void constructDepthRenderPass();
     void constructAmbientOcclusionRenderPass();
-    Qt3DRender::QFrameGraphNode *constructRubberBandsPass();
+    void constructBloomRenderPass();
+    void constructRubberBandsPass( Qt3DRender::QFrameGraphNode *topNode = nullptr );
+    void constructMsaaBlitNodes();
 
-    Qt3DRender::QFrameGraphNode *constructSubPostPassForProcessing();
-    Qt3DRender::QFrameGraphNode *constructSubPostPassForRenderCapture();
+    void constructThumbnailCapturePass();
+    void updateThumbnailTextureSize();
+    void onThumbnailCaptureCompleted( Qt3DRender::QRenderCaptureReply *reply );
 
-    bool mRenderCaptureEnabled = false;
+    bool mMsaaEnabled = false;
+    bool mMsaaBlitConfigured = false;
+    Qt3DRender::QBlitFramebuffer *mMsaaBlitNode = nullptr;
+    Qt3DRender::QBlitFramebuffer *mMsaaDepthBlitNode = nullptr;
+    Qt3DRender::QClearBuffers *mMsaaClearBuffers = nullptr;
 
     // holds renderviews according to their name
     std::map<QString, std::unique_ptr<QgsAbstractRenderView>> mRenderViewMap;

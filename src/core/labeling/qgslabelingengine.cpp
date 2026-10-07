@@ -88,9 +88,13 @@ class QgsLabelSorter
 // QgsLabelingEngine
 //
 
-QgsLabelingEngine::QgsLabelingEngine()
-  : mResults( new QgsLabelingResults )
-{}
+QgsLabelingEngine::QgsLabelingEngine( const QgsMapSettings &mapSettings )
+{
+  const bool enableSearchTree = !mapSettings.labelingEngineSettings().flags().testFlag( Qgis::LabelingFlag::DisableSearchTree );
+  mResults = std::make_unique< QgsLabelingResults >( enableSearchTree );
+
+  setMapSettings( mapSettings );
+}
 
 QgsLabelingEngine::~QgsLabelingEngine()
 {
@@ -289,7 +293,7 @@ void QgsLabelingEngine::registerLabels( QgsRenderContext &context )
 
   const QgsLabelingEngineSettings &settings = mMapSettings.labelingEngineSettings();
 
-  mPal = std::make_unique< pal::Pal >();
+  mPal = std::make_unique< pal::Pal >( settings.flags() );
 
   mPal->setMaximumLineCandidatesPerMapUnit( settings.maximumLineCandidatesPerCm() / context.convertToMapUnits( 10, Qgis::RenderUnit::Millimeters ) );
   mPal->setMaximumPolygonCandidatesPerMapUnitSquared( settings.maximumPolygonCandidatesPerCmSquared() / std::pow( context.convertToMapUnits( 10, Qgis::RenderUnit::Millimeters ), 2 ) );
@@ -352,7 +356,7 @@ void QgsLabelingEngine::solve( QgsRenderContext &context )
   const QList< QgsLabelBlockingRegion > blockingRegions = mMapSettings.labelBlockingRegions();
   for ( const QgsLabelBlockingRegion &region : blockingRegions )
   {
-    mapBoundaryGeom = mapBoundaryGeom.difference( region.geometry );
+    mapBoundaryGeom = mapBoundaryGeom.difference( region.geometry, QgsGeometryParameters(), context.feedback() );
   }
 
   if ( settings.flags() & Qgis::LabelingFlag::DrawCandidates )
@@ -522,7 +526,7 @@ void QgsLabelingEngine::drawLabels( QgsRenderContext &context, const QString &la
       painter->save();
       painter->setRenderHint( QPainter::Antialiasing, false );
       painter->translate( QPointF( outPt.x(), outPt.y() ) );
-      painter->rotate( -label->getAlpha() * 180 / M_PI );
+      painter->rotate( -label->angleRadians() * 180 / M_PI );
 
       if ( label->conflictsWithObstacle() )
       {
@@ -682,7 +686,7 @@ void QgsLabelingEngine::drawLabelCandidateRect( pal::LabelPosition *lp, QgsRende
   QgsPointXY outPt2 = xform->transform( lp->getX() + lp->getWidth(), lp->getY() + lp->getHeight() );
   QRectF rect( 0, 0, outPt2.x() - outPt.x(), outPt2.y() - outPt.y() );
   painter->translate( QPointF( outPt.x(), outPt.y() ) );
-  painter->rotate( -lp->getAlpha() * 180 / M_PI );
+  painter->rotate( -lp->angleRadians() * 180 / M_PI );
 
   if ( lp->conflictsWithObstacle() )
   {
@@ -716,7 +720,7 @@ void QgsLabelingEngine::drawLabelMetrics( pal::LabelPosition *label, const QgsMa
   painter->save();
   painter->setRenderHint( QPainter::Antialiasing, false );
   painter->translate( QPointF( renderPoint.x(), renderPoint.y() ) );
-  painter->rotate( -label->getAlpha() * 180 / M_PI );
+  painter->rotate( -label->angleRadians() * 180 / M_PI );
 
   painter->setBrush( Qt::NoBrush );
   painter->setPen( QColor( 255, 0, 0, 220 ) );
@@ -801,8 +805,8 @@ void QgsLabelingEngine::drawLabelMetrics( pal::LabelPosition *label, const QgsMa
 //  QgsDefaultLabelingEngine
 //
 
-QgsDefaultLabelingEngine::QgsDefaultLabelingEngine()
-  : QgsLabelingEngine()
+QgsDefaultLabelingEngine::QgsDefaultLabelingEngine( const QgsMapSettings &mapSettings )
+  : QgsLabelingEngine( mapSettings )
 {}
 
 void QgsDefaultLabelingEngine::run( QgsRenderContext &context )
@@ -830,8 +834,8 @@ void QgsDefaultLabelingEngine::run( QgsRenderContext &context )
 //  QgsStagedRenderLabelingEngine
 //
 
-QgsStagedRenderLabelingEngine::QgsStagedRenderLabelingEngine()
-  : QgsLabelingEngine()
+QgsStagedRenderLabelingEngine::QgsStagedRenderLabelingEngine( const QgsMapSettings &mapSettings )
+  : QgsLabelingEngine( mapSettings )
 {}
 
 void QgsStagedRenderLabelingEngine::run( QgsRenderContext &context )

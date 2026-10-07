@@ -297,9 +297,9 @@ class _3D_EXPORT QgsRuleBased3DRenderer : public QgsAbstractVectorLayer3DRendere
     ~QgsRuleBased3DRenderer() override;
 
     //! Returns pointer to the root rule
-    QgsRuleBased3DRenderer::Rule *rootRule() { return mRootRule; }
+    QgsRuleBased3DRenderer::Rule *rootRule() { return mRootRule.get(); }
     //! Returns pointer to the root rule
-    const Rule *rootRule() const SIP_SKIP { return mRootRule; }
+    const Rule *rootRule() const SIP_SKIP { return mRootRule.get(); }
 
     QString type() const override { return "rulebased"; }
     QgsRuleBased3DRenderer *clone() const override SIP_FACTORY;
@@ -308,8 +308,17 @@ class _3D_EXPORT QgsRuleBased3DRenderer : public QgsAbstractVectorLayer3DRendere
     void writeXml( QDomElement &elem, const QgsReadWriteContext &context ) const override;
     void readXml( const QDomElement &elem, const QgsReadWriteContext &context ) override;
 
+    /**
+     * Creates a new QgsRuleBased3DRenderer from an existing \a renderer.
+     *
+     * \returns a new renderer if the conversion was possible, otherwise NULLPTR.
+     *
+     * \since QGIS 4.2
+     */
+    static std::unique_ptr< QgsRuleBased3DRenderer > convertFromRenderer( const QgsAbstractVectorLayer3DRenderer *renderer, QgsVectorLayer *layer = nullptr );
+
   private:
-    Rule *mRootRule = nullptr;
+    std::unique_ptr<Rule> mRootRule;
 };
 
 #endif // QGSRULEBASED3DRENDERER_H

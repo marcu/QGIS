@@ -1257,7 +1257,7 @@ void QgsPalLayerSettings::readXml( const QDomElement &elem, const QgsReadWriteCo
   mLineSettings.setAnchorType( static_cast< QgsLabelLineSettings::AnchorType >( placementElem.attribute( u"lineAnchorType"_s, u"0"_s ).toInt() ) );
   mLineSettings.setAnchorClipping( static_cast< QgsLabelLineSettings::AnchorClipping >( placementElem.attribute( u"lineAnchorClipping"_s, u"0"_s ).toInt() ) );
   // when reading the anchor text point we default to center mode, to keep same result as for projects created in < 3.26
-  mLineSettings.setAnchorTextPoint( qgsEnumKeyToValue( placementElem.attribute( u"lineAnchorTextPoint"_s ), QgsLabelLineSettings::AnchorTextPoint::CenterOfText ) );
+  mLineSettings.setAnchorTextPoint( qgsEnumKeyToValue( placementElem.attribute( u"lineAnchorTextPoint"_s ), Qgis::TextAnchorPoint::CenterOfText ) );
   mLineSettings.setCurvedLabelMode( qgsEnumKeyToValue( placementElem.attribute( u"curvedLabelMode"_s ), Qgis::CurvedLabelMode::Default ) );
 
   mPointSettings.setMaximumDistance( placementElem.attribute( u"maximumDistance"_s, u"0"_s ).toDouble() );
@@ -1426,12 +1426,12 @@ void QgsPalLayerSettings::readXml( const QDomElement &elem, const QgsReadWriteCo
   // TODO - replace with registry when multiple callout styles exist
   const QString calloutType = elem.attribute( u"calloutType"_s );
   if ( calloutType.isEmpty() )
-    mCallout.reset( QgsCalloutRegistry::defaultCallout() );
+    mCallout = QgsCalloutRegistry::defaultCallout();
   else
   {
-    mCallout.reset( QgsApplication::calloutRegistry()->createCallout( calloutType, elem.firstChildElement( u"callout"_s ), context ) );
+    mCallout = QgsApplication::calloutRegistry()->createCallout( calloutType, elem.firstChildElement( u"callout"_s ), context );
     if ( !mCallout )
-      mCallout.reset( QgsCalloutRegistry::defaultCallout() );
+      mCallout = QgsCalloutRegistry::defaultCallout();
   }
 }
 
@@ -2101,7 +2101,7 @@ void QgsPalLayerSettings::calculateLabelMetrics(
 
 void QgsPalLayerSettings::registerFeature( const QgsFeature &f, QgsRenderContext &context )
 {
-  registerFeatureWithDetails( f, context, QgsGeometry(), nullptr );
+  registerFeatureWithDetails( f, context, QgsLabelFeatureDetails() );
 }
 
 bool QgsPalLayerSettings::isLabelVisible( QgsRenderContext &context ) const
@@ -2486,7 +2486,7 @@ QgsGeometry QgsPalLayerSettings::evaluateLabelGeometry( const QgsFeature &featur
   return geom;
 }
 
-std::vector<std::unique_ptr<QgsLabelFeature> > QgsPalLayerSettings::registerFeatureWithDetails( const QgsFeature &f, QgsRenderContext &context, QgsGeometry obstacleGeometry, const QgsSymbol *symbol )
+std::vector<std::unique_ptr<QgsLabelFeature> > QgsPalLayerSettings::registerFeatureWithDetails( const QgsFeature &f, QgsRenderContext &context, const QgsLabelFeatureDetails &details )
 {
   QVariant exprVal; // value() is repeatedly nulled on data defined evaluation and replaced when successful
   mCurFeat = &f;
@@ -2497,6 +2497,8 @@ std::vector<std::unique_ptr<QgsLabelFeature> > QgsPalLayerSettings::registerFeat
     isObstacle = mDataDefinedProperties.valueAsBool( QgsPalLayerSettings::Property::IsObstacle, context.expressionContext(), isObstacle ); // default to layer default
 
   std::vector<std::unique_ptr<QgsLabelFeature> > res;
+
+  QgsGeometry obstacleGeometry = details.obstacleGeometry();
 
   // possibly an obstacle-only feature
   if ( !drawLabels )
@@ -2544,6 +2546,14 @@ std::vector<std::unique_ptr<QgsLabelFeature> > QgsPalLayerSettings::registerFeat
   QgsTextFormat evaluatedFormat = evaluateTextFormat( context, labelIsHidden );
   if ( labelIsHidden )
     return {};
+
+  if ( context.testFlag( Qgis::RenderContextFlag::DrawLabelSelection ) && details.isSelected() )
+  {
+    // when rendering labels in a selected state, we render them using a buffer in the layer's selection color
+    dataDefinedValues.insert( QgsPalLayerSettings::Property::BufferDraw, true );
+    dataDefinedValues.insert( QgsPalLayerSettings::Property::BufferSize, 2 );
+    dataDefinedValues.insert( QgsPalLayerSettings::Property::BufferColor, context.selectionColor() );
+  }
 
   QgsLabelPlacementSettings placementSettings = mPlacementSettings;
   placementSettings.updateDataDefinedProperties( mDataDefinedProperties, context.expressionContext() );
@@ -2647,7 +2657,7 @@ std::vector<std::unique_ptr<QgsLabelFeature> > QgsPalLayerSettings::registerFeat
     case Qgis::MultiPartLabelingBehavior::LabelEveryPartWithEntireLabel:
     {
       std::unique_ptr< QgsTextLabelFeature > label
-        = generateLabelFeature( context, feature, 0, geom, obstacleGeometry, doc, labelText, evaluatedFormat, symbol, lineSettings, pointSettings, placementSettings, isObstacle, doClip );
+        = generateLabelFeature( context, feature, 0, geom, obstacleGeometry, doc, labelText, evaluatedFormat, details.symbol(), lineSettings, pointSettings, placementSettings, isObstacle, doClip );
       if ( label )
         res.emplace_back( std::move( label ) );
       break;
@@ -2662,7 +2672,7 @@ std::vector<std::unique_ptr<QgsLabelFeature> > QgsPalLayerSettings::registerFeat
       for ( std::size_t i = 0; i < partCount; ++i )
       {
         std::unique_ptr< QgsTextLabelFeature > label
-          = generateLabelFeature( context, feature, static_cast< int >( i ), geometryParts[i], obstacleGeometry, documentParts[i], labelText, evaluatedFormat, symbol, lineSettings, pointSettings, placementSettings, isObstacle, doClip );
+          = generateLabelFeature( context, feature, static_cast< int >( i ), geometryParts[i], obstacleGeometry, documentParts[i], labelText, evaluatedFormat, details.symbol(), lineSettings, pointSettings, placementSettings, isObstacle, doClip );
         if ( label )
           res.emplace_back( std::move( label ) );
       }
@@ -2743,7 +2753,7 @@ std::unique_ptr< QgsTextLabelFeature> QgsPalLayerSettings::generateLabelFeature(
   if ( !context.featureClipGeometry().isEmpty() )
   {
     const Qgis::GeometryType expectedType = geom.type();
-    geom = geom.intersection( context.featureClipGeometry() );
+    geom = geom.intersection( context.featureClipGeometry(), QgsGeometryParameters(), context.feedback() );
     geom.convertGeometryCollectionToSubclass( expectedType );
   }
 
@@ -4611,7 +4621,7 @@ QgsGeometry QgsPalLabeling::prepareGeometry( const QgsGeometry &geometry, QgsRen
   if ( mustClip )
   {
     // nice and fast, but can result in invalid geometries. At least it will potentially strip out a bunch of unwanted vertices upfront!
-    QgsGeometry clipGeom = geom.clipped( clipGeometry.boundingBox() );
+    QgsGeometry clipGeom = geom.clipped( clipGeometry.boundingBox(), context.feedback() );
     if ( clipGeom.isEmpty() )
       return QgsGeometry();
 
@@ -4638,7 +4648,7 @@ QgsGeometry QgsPalLabeling::prepareGeometry( const QgsGeometry &geometry, QgsRen
         QgsGeometry partGeom( ( *it )->clone() );
         if ( !partGeom.isGeosValid() )
         {
-          partGeom = partGeom.makeValid();
+          partGeom = partGeom.makeValid( Qgis::MakeValidMethod::Linework, false, context.feedback() );
         }
         parts.append( partGeom );
       }
@@ -4646,7 +4656,7 @@ QgsGeometry QgsPalLabeling::prepareGeometry( const QgsGeometry &geometry, QgsRen
     }
     else if ( !geom.isGeosValid() )
     {
-      QgsGeometry bufferGeom = geom.makeValid();
+      QgsGeometry bufferGeom = geom.makeValid( Qgis::MakeValidMethod::Linework, false, context.feedback() );
       if ( bufferGeom.isNull() )
       {
         QgsDebugError( u"Could not repair geometry: %1"_s.arg( bufferGeom.lastError() ) );
@@ -4659,7 +4669,7 @@ QgsGeometry QgsPalLabeling::prepareGeometry( const QgsGeometry &geometry, QgsRen
   if ( mustClipExact )
   {
     // now do the real intersection against the actual clip geometry
-    QgsGeometry clipGeom = geom.intersection( clipGeometry );
+    QgsGeometry clipGeom = geom.intersection( clipGeometry, QgsGeometryParameters(), context.feedback() );
     if ( clipGeom.isEmpty() )
     {
       return QgsGeometry();

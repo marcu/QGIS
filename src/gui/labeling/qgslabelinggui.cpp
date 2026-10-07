@@ -769,7 +769,7 @@ QgsPalLayerSettings QgsLabelingGui::layerSettings()
     callout.reset( pew->callout()->clone() );
   }
   if ( !callout )
-    callout.reset( QgsApplication::calloutRegistry()->createCallout( calloutType ) );
+    callout = QgsApplication::calloutRegistry()->createCallout( calloutType );
 
   callout->setEnabled( mCalloutsDrawCheckBox->isChecked() );
   lyr.setCallout( callout.release() );
@@ -839,6 +839,7 @@ void QgsLabelingGui::setFormatFromStyle( const QString &name, QgsStyle::StyleEnt
     case QgsStyle::TextFormatEntity:
     case QgsStyle::LegendPatchShapeEntity:
     case QgsStyle::Symbol3DEntity:
+    case QgsStyle::MaterialSettingsEntity:
     {
       QgsTextFormatWidget::setFormatFromStyle( name, type, stylePath );
       return;
@@ -935,6 +936,7 @@ void QgsLabelingGui::saveFormat()
     case QgsStyle::SmartgroupEntity:
     case QgsStyle::LegendPatchShapeEntity:
     case QgsStyle::Symbol3DEntity:
+    case QgsStyle::MaterialSettingsEntity:
       break;
   }
 }

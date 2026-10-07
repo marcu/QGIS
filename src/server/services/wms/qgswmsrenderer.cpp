@@ -112,6 +112,9 @@ using namespace Qt::StringLiterals;
 
 namespace QgsWms
 {
+  constexpr const char *MEMBERNAME_FEATURETYPE = "featureType";                     // name of the JSON-FG member describing the layer name
+  constexpr const char *MEMBERNAME_QGIS_REQUESTEDWMSNAME = "qgis:requestedWmsName"; // name of the QGIS member describing the name of the group that requested this layer
+
   QgsRenderer::QgsRenderer( const QgsWmsRenderContext &context )
     : mContext( context )
   {
@@ -1229,8 +1232,12 @@ namespace QgsWms
   std::unique_ptr<QgsMapRendererTask> QgsRenderer::getPdf( const QString &tmpFileName )
   {
     QgsMapSettings ms;
+
+    QList<QgsMapLayer *> layers = mContext.layersToRender();
+    configureLayers( layers, &ms );
+
+    ms.setLayers( layers );
     ms.setExtent( mWmsParameters.bboxAsRectangle() );
-    ms.setLayers( mContext.layersToRender() );
     ms.setDestinationCrs( QgsCoordinateReferenceSystem::fromOgcWmsCrs( mWmsParameters.crs() ) );
     ms.setOutputSize( QSize( mWmsParameters.widthAsInt(), mWmsParameters.heightAsInt() ) );
     ms.setDpiTarget( mWmsParameters.dpiAsDouble() );
@@ -1332,6 +1339,7 @@ namespace QgsWms
 
     // compute scale denominator
     QgsScaleCalculator scaleCalc( ( outputImage->logicalDpiX() + outputImage->logicalDpiY() ) / 2, mapSettings.destinationCrs().mapUnits() );
+    scaleCalc.setEllipsoid( mapSettings.ellipsoid() );
     const double scaleDenominator = scaleCalc.calculate( mWmsParameters.bboxAsRectangle(), outputImage->width() );
 
     // configure layers
@@ -1453,6 +1461,7 @@ namespace QgsWms
     mapSettings.setDestinationCrs( outputCRS );
 
     mapSettings.setTransformContext( mProject->transformContext() );
+    mapSettings.setEllipsoid( mProject->ellipsoid() );
 
     // Change x- and y- of BBOX for WMS 1.3.0 if axis inverted
     if ( mWmsParameters.versionAsNumber() >= QgsProjectVersion( 1, 3, 0 ) && outputCRS.hasAxisInverted() )
@@ -3028,10 +3037,11 @@ namespace QgsWms
 
   QByteArray QgsRenderer::convertFeatureInfoToJson( const QList<QgsMapLayer *> &layers, const QDomDocument &doc, const QgsCoordinateReferenceSystem &destCRS ) const
   {
-    json json {
+    json jsonCollection {
       { "type", "FeatureCollection" },
       { "features", json::array() },
     };
+
     const bool withGeometry = ( QgsServerProjectUtils::wmsFeatureInfoAddWktGeometry( *mProject ) && mWmsParameters.withGeometry() );
     const bool withDisplayName = mWmsParameters.withDisplayName();
 
@@ -3052,6 +3062,16 @@ namespace QgsWms
 
       if ( !layer )
         continue;
+
+      // check if the layers have been requested by something other than their layer name (like the group)
+      // and if so, keep the highest ancestor as requestedWmsName
+      QStringList requestedWmsNames = mContext.acceptableLayersToRender().value( layer );
+      requestedWmsNames.removeAll( layerName );
+      QString requestedWmsName;
+      if ( !requestedWmsNames.isEmpty() )
+      {
+        requestedWmsName = requestedWmsNames.first();
+      }
 
       if ( layer->type() == Qgis::LayerType::Vector )
       {
@@ -3144,9 +3164,15 @@ namespace QgsWms
         exporter.setAttributeDisplayName( true );
         exporter.setAttributes( attributes );
         exporter.setIncludeGeometry( withGeometry );
+        // Always add CRS information so that the export knows if it needs to transform geometries
+        // to CRS84 in case the requested profile needs it, the feature geometries are already
+        // in the CRS of the request, so no transformation is needed
         exporter.setTransformGeometries( false );
+        exporter.setDestinationCrs( destCRS );
+        // This is the CRS of the features that the exporter receives
+        exporter.setSourceCrs( destCRS );
 
-        QgsJsonUtils::addCrsInfo( json, destCRS );
+        QgsJsonUtils::addCrsInfo( jsonCollection, destCRS );
 
         for ( const auto &feature : std::as_const( features ) )
         {
@@ -3156,7 +3182,16 @@ namespace QgsWms
           {
             extraProperties.insert( u"display_name"_s, fidDisplayNameMap.value( feature.id() ) );
           }
-          json["features"].push_back( exporter.exportFeatureToJsonObject( feature, extraProperties, id ) );
+          QVariantMap extraMembers;
+          extraMembers[MEMBERNAME_FEATURETYPE] = layerName;
+
+          // if existing, add the requestedWmsName to extra members
+          if ( !requestedWmsName.isEmpty() )
+          {
+            extraMembers[MEMBERNAME_QGIS_REQUESTEDWMSNAME] = requestedWmsName;
+          }
+
+          jsonCollection["features"].push_back( exporter.exportFeatureToJsonObject( feature, extraProperties, id, extraMembers ) );
         }
       }
       else // raster layer
@@ -3177,14 +3212,20 @@ namespace QgsWms
           properties[name.toStdString()] = value.toStdString();
         }
 
-        json["features"].push_back( { { "type", "Feature" }, { "id", layerName.toStdString() }, { "properties", properties } } );
+        json jsonFeature = { { "type", "Feature" }, { MEMBERNAME_FEATURETYPE, layerName.toStdString() }, { "id", layerName.toStdString() }, { "properties", properties } };
+
+        if ( !requestedWmsName.isEmpty() )
+        {
+          jsonFeature[MEMBERNAME_QGIS_REQUESTEDWMSNAME] = requestedWmsName.toStdString();
+        }
+        jsonCollection["features"].push_back( jsonFeature );
       }
     }
 #ifdef QGISDEBUG
     // This is only useful to generate human readable reference files for tests
-    return QByteArray::fromStdString( json.dump( 2 ) );
+    return QByteArray::fromStdString( jsonCollection.dump( 2 ) );
 #else
-    return QByteArray::fromStdString( json.dump() );
+    return QByteArray::fromStdString( jsonCollection.dump() );
 #endif
   }
 
@@ -3381,13 +3422,22 @@ namespace QgsWms
       }
 
       QDomElement fieldElem = doc.createElement( "qgs:" + attributeName.replace( ' ', '_' ) );
-      QString fieldTextString = featureAttributes.at( i ).toString();
-      if ( layer )
+
+      // For GML: skip formatter and return null value if the attribute value is null
+      if ( mWmsParameters.infoFormat() == QgsWmsParameters::Format::GML && QgsVariantUtils::isNull( featureAttributes.at( i ) ) )
       {
-        fieldTextString = QgsExpression::replaceExpressionText( replaceValueMapAndRelation( layer, i, fieldTextString ), &expressionContext );
+        fieldElem.setAttribute( "xsi:nil"_L1, "true"_L1 );
       }
-      QDomText fieldText = doc.createTextNode( fieldTextString );
-      fieldElem.appendChild( fieldText );
+      else
+      {
+        QString fieldTextString = featureAttributes.at( i ).toString();
+        if ( layer )
+        {
+          fieldTextString = QgsExpression::replaceExpressionText( replaceValueMapAndRelation( layer, i, fieldTextString ), &expressionContext );
+        }
+        QDomText fieldText = doc.createTextNode( fieldTextString );
+        fieldElem.appendChild( fieldText );
+      }
       typeNameElement.appendChild( fieldElem );
     }
 
@@ -3493,7 +3543,7 @@ namespace QgsWms
       // create renderer from sld document
       std::unique_ptr<QgsFeatureRenderer> renderer;
       QDomElement el = sldDoc.documentElement();
-      renderer.reset( QgsFeatureRenderer::loadSld( el, param.mGeom.type(), errorMsg ) );
+      renderer = QgsFeatureRenderer::loadSld( el, param.mGeom.type(), errorMsg );
       if ( !renderer )
       {
         QgsMessageLog::logMessage( errorMsg, "Server", Qgis::MessageLevel::Info );
@@ -3628,6 +3678,18 @@ namespace QgsWms
           bufferSettings.setSize( static_cast<double>( param.mBufferSize ) );
         }
 
+        if ( param.mFrameSize > 0 )
+        {
+          QgsTextBackgroundSettings background;
+          background.setEnabled( true );
+          background.setSize( QSize( param.mFrameSize, param.mFrameSize ) );
+          background.setType( QgsTextBackgroundSettings::ShapeRectangle );
+          background.setStrokeColor( param.mFrameOutlineColor );
+          background.setStrokeWidth( param.mFrameOutlineWidth );
+          background.setFillColor( param.mFrameBackgroundColor );
+          textFormat.setBackground( background );
+        }
+
         textFormat.setBuffer( bufferSettings );
         palSettings.setFormat( textFormat );
 
@@ -3668,7 +3730,7 @@ namespace QgsWms
     mContext.accessControl()->resolveFilterFeatures( mapSettings.layers() );
     filters.addProvider( mContext.accessControl() );
 #endif
-    QgsMapRendererJobProxy renderJob( mContext.settings().parallelRendering(), mContext.settings().maxThreads(), &filters );
+    QgsMapRendererJobProxy renderJob( mContext.settings().parallelRendering(), mContext.settings().maxThreads(), &filters, mContext.perLayerTemporalRange() );
 
     renderJob.render( mapSettings, image, mContext.socketFeedback() );
     painter = renderJob.takePainter();
@@ -3849,7 +3911,7 @@ namespace QgsWms
     for ( const QgsMapLayerServerProperties::WmsDimensionInfo &dim : wmsDims )
     {
       // Skip temporal properties for this layer, give precedence to the dimensions implementation
-      if ( mIsTemporal && dim.name.toUpper() == "TIME"_L1 && layer->temporalProperties()->isActive() )
+      if ( mIsTemporal && dim.name.toUpper() == QgsServerWmsDimensionProperties::TIME_DIMENSION_NAME && layer->temporalProperties()->isActive() )
       {
         layer->temporalProperties()->setIsActive( false );
       }
@@ -3874,13 +3936,13 @@ namespace QgsWms
       {
         // Default value based on type configured by user
         QVariant defValue;
-        if ( dim.defaultDisplayType == QgsMapLayerServerProperties::WmsDimensionInfo::AllValues )
+        if ( dim.defaultDisplayType == Qgis::WmsDimensionDefaultDisplay::AllValues )
         {
           continue; // no filter by default for this dimension
         }
-        else if ( dim.defaultDisplayType == QgsMapLayerServerProperties::WmsDimensionInfo::ReferenceValue )
+        else if ( dim.defaultDisplayType == Qgis::WmsDimensionDefaultDisplay::ReferenceValue )
         {
-          defValue = dim.referenceValue;
+          defValue = dim.referenceValue();
         }
         else
         {
@@ -3893,11 +3955,11 @@ namespace QgsWms
           // sort unique values
           QList<QVariant> values = qgis::setToList( uniqueValues );
           std::sort( values.begin(), values.end() );
-          if ( dim.defaultDisplayType == QgsMapLayerServerProperties::WmsDimensionInfo::MinValue )
+          if ( dim.defaultDisplayType == Qgis::WmsDimensionDefaultDisplay::MinValue )
           {
             defValue = values.first();
           }
-          else if ( dim.defaultDisplayType == QgsMapLayerServerProperties::WmsDimensionInfo::MaxValue )
+          else if ( dim.defaultDisplayType == Qgis::WmsDimensionDefaultDisplay::MaxValue )
           {
             defValue = values.last();
           }

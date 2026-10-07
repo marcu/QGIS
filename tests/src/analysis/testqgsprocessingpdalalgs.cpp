@@ -89,11 +89,6 @@ void TestQgsProcessingPdalAlgs::initTestCase()
   QgsApplication::init();
   QgsApplication::initQgis();
 
-  // Set up the QgsSettings environment
-  QCoreApplication::setOrganizationName( u"QGIS"_s );
-  QCoreApplication::setOrganizationDomain( u"qgis.org"_s );
-  QCoreApplication::setApplicationName( u"QGIS-TEST"_s );
-
   QgsApplication::processingRegistry()->addProvider( new QgsPdalAlgorithms( QgsApplication::processingRegistry() ) );
 
   const QString pointCloudFileName = mDataDir + "/point_clouds/copc/rgb.copc.laz";
@@ -616,7 +611,7 @@ void TestQgsProcessingPdalAlgs::exportRasterTin()
 #if PDAL_VERSION_MAJOR_INT > 2 || ( PDAL_VERSION_MAJOR_INT == 2 && PDAL_VERSION_MINOR_INT >= 6 )
   parameters.insert( u"MAX_EDGE_LENGTH"_s, 25 );
   args = alg->createArgumentLists( parameters, *context, &feedback );
-  QCOMPARE( args, QStringList() << u"to_raster_tin"_s << u"--input=%1"_s.arg( mPointCloudLayerPath ) << u"--output=%1"_s.arg( outputFile ) << u"--resolution=0.5"_s << u"--tile-size=100"_s << u"--tile-origin-x=1"_s << u"--tile-origin-y=10"_s << u"--max_triangle_edge_length=25"_s );
+  QCOMPARE( args, QStringList() << u"to_raster_tin"_s << u"--input=%1"_s.arg( mPointCloudLayerPath ) << u"--output=%1"_s.arg( outputFile ) << u"--resolution=0.5"_s << u"--tile-size=100"_s << u"--tile-origin-x=1"_s << u"--tile-origin-y=10"_s << u"--max-triangle-edge-length=25"_s );
   parameters.remove( u"MAX_EDGE_LENGTH"_s );
 #endif
 #endif
@@ -924,11 +919,17 @@ void TestQgsProcessingPdalAlgs::buildVpc()
   updateFileListArg( args, u"inputFiles.txt"_s );
   QCOMPARE( args, QStringList() << u"build_vpc"_s << u"--output=%1"_s.arg( outputFile ) << u"--boundary"_s << u"--stats"_s << u"--overview"_s << u"--input-file-list=inputFiles.txt"_s );
 
+  // build tiled overviews
+  parameters.insert( u"OVERVIEW_LENGTH"_s, 42 );
+  args = alg->createArgumentLists( parameters, *context, &feedback );
+  updateFileListArg( args, u"inputFiles.txt"_s );
+  QCOMPARE( args, QStringList() << u"build_vpc"_s << u"--output=%1"_s.arg( outputFile ) << u"--boundary"_s << u"--stats"_s << u"--overview"_s << u"--overview-length=42"_s << u"--input-file-list=inputFiles.txt"_s );
+
   // set max threads to 2, a --threads argument should be added
   context->setMaximumThreads( 2 );
   args = alg->createArgumentLists( parameters, *context, &feedback );
   updateFileListArg( args, u"inputFiles.txt"_s );
-  QCOMPARE( args, QStringList() << u"build_vpc"_s << u"--output=%1"_s.arg( outputFile ) << u"--boundary"_s << u"--stats"_s << u"--overview"_s << u"--threads=2"_s << u"--input-file-list=inputFiles.txt"_s );
+  QCOMPARE( args, QStringList() << u"build_vpc"_s << u"--output=%1"_s.arg( outputFile ) << u"--boundary"_s << u"--stats"_s << u"--overview"_s << u"--overview-length=42"_s << u"--threads=2"_s << u"--input-file-list=inputFiles.txt"_s );
 }
 
 void TestQgsProcessingPdalAlgs::clip()

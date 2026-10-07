@@ -33,7 +33,10 @@
 #include "qgslinesymbol.h"
 #include "qgslinesymbollayer.h"
 #include "qgsmapcanvas.h"
+#include "qgsmapmouseevent.h"
+#include "qgsmaptoolcapture.h"
 #include "qgsmaptooleditblanksegments.h"
+#include "qgsmaptoolextraitem.h"
 #include "qgsmarkersymbol.h"
 #include "qgsmarkersymbollayer.h"
 #include "qgsnewauxiliaryfielddialog.h"
@@ -41,13 +44,16 @@
 #include "qgsnumericformatselectorwidget.h"
 #include "qgsproperty.h"
 #include "qgspropertyoverridebutton.h"
+#include "qgssnappingutils.h"
 #include "qgssvgcache.h"
 #include "qgssvgselectorwidget.h"
 #include "qgssymbollayerutils.h"
 #include "qgsvectorlayer.h"
+#include "qgsvectorlayerutils.h"
 
 #include <QAbstractButton>
 #include <QAction>
+#include <QActionGroup>
 #include <QBuffer>
 #include <QButtonGroup>
 #include <QColorDialog>
@@ -55,6 +61,7 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QInputDialog>
+#include <QMainWindow>
 #include <QMenu>
 #include <QMessageBox>
 #include <QMovie>
@@ -532,11 +539,11 @@ void QgsSimpleLineSymbolLayerWidget::mChangePatternButton_clicked()
     QgsDashSpaceWidget *widget = new QgsDashSpaceWidget( mLayer->customDashVector(), panel );
     widget->setPanelTitle( tr( "Custom Dash Pattern" ) );
     widget->setUnit( mDashPatternUnitWidget->unit() );
-    connect( widget, &QgsPanelWidget::widgetChanged, this, [this, widget]() {
+    connect( widget, &QgsPanelWidget::changed, this, [this, widget]() {
       mLayer->setCustomDashVector( widget->dashDotVector() );
       updatePatternIcon();
     } );
-    connect( widget, &QgsPanelWidget::widgetChanged, this, &QgsSymbolLayerWidget::changed );
+    connect( widget, &QgsPanelWidget::changed, this, &QgsSymbolLayerWidget::changed );
     panel->openPanel( widget );
     return;
   }
@@ -656,9 +663,7 @@ void QgsSimpleLineSymbolLayerWidget::resizeEvent( QResizeEvent *event )
   updatePatternIcon();
 }
 
-
 ///////////
-
 
 QgsSimpleMarkerSymbolLayerWidget::QgsSimpleMarkerSymbolLayerWidget( QgsVectorLayer *vl, QWidget *parent )
   : QgsSymbolLayerWidget( parent, vl )
@@ -697,11 +702,13 @@ QgsSimpleMarkerSymbolLayerWidget::QgsSimpleMarkerSymbolLayerWidget( QgsVectorLay
   btnChangeColorFill->setContext( u"symbology"_s );
   btnChangeColorFill->setShowNoColor( true );
   btnChangeColorFill->setNoColorString( tr( "Transparent Fill" ) );
+  btnChangeColorFill->setOpaqueColorString( tr( "Opaque Fill" ) );
   btnChangeColorStroke->setAllowOpacity( true );
   btnChangeColorStroke->setColorDialogTitle( tr( "Select Stroke Color" ) );
   btnChangeColorStroke->setContext( u"symbology"_s );
   btnChangeColorStroke->setShowNoColor( true );
   btnChangeColorStroke->setNoColorString( tr( "Transparent Stroke" ) );
+  btnChangeColorStroke->setOpaqueColorString( tr( "Opaque Stroke" ) );
 
   mFillColorDDBtn->registerLinkedWidget( btnChangeColorFill );
   mStrokeColorDDBtn->registerLinkedWidget( btnChangeColorStroke );
@@ -1001,11 +1008,13 @@ QgsSimpleFillSymbolLayerWidget::QgsSimpleFillSymbolLayerWidget( QgsVectorLayer *
   btnChangeColor->setContext( u"symbology"_s );
   btnChangeColor->setShowNoColor( true );
   btnChangeColor->setNoColorString( tr( "Transparent Fill" ) );
+  btnChangeColor->setOpaqueColorString( tr( "Opaque Fill" ) );
   btnChangeStrokeColor->setAllowOpacity( true );
   btnChangeStrokeColor->setColorDialogTitle( tr( "Select Stroke Color" ) );
   btnChangeStrokeColor->setContext( u"symbology"_s );
   btnChangeStrokeColor->setShowNoColor( true );
   btnChangeStrokeColor->setNoColorString( tr( "Transparent Stroke" ) );
+  btnChangeStrokeColor->setOpaqueColorString( tr( "Opaque Stroke" ) );
 
   spinOffsetX->setClearValue( 0.0 );
   spinOffsetY->setClearValue( 0.0 );
@@ -1355,11 +1364,13 @@ QgsGradientFillSymbolLayerWidget::QgsGradientFillSymbolLayerWidget( QgsVectorLay
   btnChangeColor->setContext( u"symbology"_s );
   btnChangeColor->setShowNoColor( true );
   btnChangeColor->setNoColorString( tr( "Transparent" ) );
+  btnChangeColor->setOpaqueColorString( tr( "Opaque" ) );
   btnChangeColor2->setAllowOpacity( true );
   btnChangeColor2->setColorDialogTitle( tr( "Select Gradient Color" ) );
   btnChangeColor2->setContext( u"symbology"_s );
   btnChangeColor2->setShowNoColor( true );
   btnChangeColor2->setNoColorString( tr( "Transparent" ) );
+  btnChangeColor2->setOpaqueColorString( tr( "Opaque" ) );
 
   mStartColorDDBtn->registerLinkedWidget( btnChangeColor );
   mEndColorDDBtn->registerLinkedWidget( btnChangeColor2 );
@@ -1701,11 +1712,13 @@ QgsShapeburstFillSymbolLayerWidget::QgsShapeburstFillSymbolLayerWidget( QgsVecto
   btnChangeColor->setContext( u"symbology"_s );
   btnChangeColor->setShowNoColor( true );
   btnChangeColor->setNoColorString( tr( "Transparent" ) );
+  btnChangeColor->setOpaqueColorString( tr( "Opaque" ) );
   btnChangeColor2->setAllowOpacity( true );
   btnChangeColor2->setColorDialogTitle( tr( "Select Gradient Color" ) );
   btnChangeColor2->setContext( u"symbology"_s );
   btnChangeColor2->setShowNoColor( true );
   btnChangeColor2->setNoColorString( tr( "Transparent" ) );
+  btnChangeColor2->setOpaqueColorString( tr( "Opaque" ) );
 
   mStartColorDDBtn->registerLinkedWidget( btnChangeColor );
   mEndColorDDBtn->registerLinkedWidget( btnChangeColor2 );
@@ -1988,7 +2001,21 @@ QgsTemplatedLineSymbolLayerWidget::QgsTemplatedLineSymbolLayerWidget( TemplatedS
   connect( chkRotateMarker, &QAbstractButton::clicked, this, &QgsTemplatedLineSymbolLayerWidget::setRotate );
   connect( spinOffset, static_cast<void ( QDoubleSpinBox::* )( double )>( &QDoubleSpinBox::valueChanged ), this, &QgsTemplatedLineSymbolLayerWidget::setOffset );
   connect( mSpinAverageAngleLength, static_cast<void ( QDoubleSpinBox::* )( double )>( &QDoubleSpinBox::valueChanged ), this, &QgsTemplatedLineSymbolLayerWidget::setAverageAngle );
-  connect( mEditBlankSegmentsBtn, &QToolButton::toggled, this, &QgsMarkerLineSymbolLayerWidget::toggleMapToolEditBlankSegments );
+
+  QActionGroup *actionGroup = new QActionGroup( this );
+  actionGroup->setExclusionPolicy( QActionGroup::ExclusionPolicy::Exclusive );
+  actionGroup->addAction( mEditBlankSegmentsAction );
+  actionGroup->addAction( mAddExtraItemAction );
+  actionGroup->addAction( mModifyExtraItemAction );
+
+  mEditBlankSegmentsBtn->setDefaultAction( mEditBlankSegmentsAction );
+  connect( mEditBlankSegmentsAction, &QAction::triggered, this, &QgsMarkerLineSymbolLayerWidget::toggleMapToolEditBlankSegments );
+
+  mAddExtraItemBtn->setDefaultAction( mAddExtraItemAction );
+  connect( mAddExtraItemAction, &QAction::triggered, this, &QgsMarkerLineSymbolLayerWidget::toggleMapToolAddExtraItem );
+
+  mModifyExtraItemBtn->setDefaultAction( mModifyExtraItemAction );
+  connect( mModifyExtraItemAction, &QAction::triggered, this, &QgsMarkerLineSymbolLayerWidget::toggleMapToolModifyExtraItem );
 
   connect( mCheckInterval, &QCheckBox::toggled, this, &QgsTemplatedLineSymbolLayerWidget::setPlacement );
   connect( mCheckVertex, &QCheckBox::toggled, this, &QgsTemplatedLineSymbolLayerWidget::setPlacement );
@@ -2070,6 +2097,27 @@ QgsTemplatedLineSymbolLayerWidget::QgsTemplatedLineSymbolLayerWidget( TemplatedS
       mHashRotationSpinBox->setVisible( false );
       mHashRotationDDBtn->setVisible( false );
   }
+}
+
+QgsTemplatedLineSymbolLayerWidget::~QgsTemplatedLineSymbolLayerWidget()
+{
+  // to avoid deleting blank segments / extra items map tool while already deleting them in this destructor
+  if ( context().mapCanvas() )
+  {
+    disconnect( context().mapCanvas(), &QgsMapCanvas::mapToolSet, this, nullptr );
+  }
+}
+
+bool QgsTemplatedLineSymbolLayerWidget::event( QEvent *event )
+{
+  if ( event->type() == QEvent::Show )
+  {
+    // Per feature customization buttons are enabled only in dock mode. That requires for this widget to be
+    // parented which is not the case when we create the widget. So we update on show event
+    updatePerFeatureCustomizationWidget();
+  }
+
+  return QgsSymbolLayerWidget::event( event );
 }
 
 void QgsTemplatedLineSymbolLayerWidget::setSymbolLayer( QgsSymbolLayer *layer )
@@ -2166,13 +2214,22 @@ void QgsTemplatedLineSymbolLayerWidget::setSymbolLayer( QgsSymbolLayer *layer )
   registerDataDefinedButton( mOffsetAlongLineDDBtn, QgsSymbolLayer::Property::OffsetAlongLine );
   registerDataDefinedButton( mAverageAngleDDBtn, QgsSymbolLayer::Property::AverageAngleLength );
   registerDataDefinedButton( mBlankSegmentsDDButton, QgsSymbolLayer::Property::BlankSegments );
+  registerDataDefinedButton( mExtraItemsDDBtn, QgsSymbolLayer::Property::ExtraItems );
   registerDataDefinedButton( mTrimDistanceStartDDBtn, QgsSymbolLayer::Property::TrimStart );
   registerDataDefinedButton( mTrimDistanceEndDDBtn, QgsSymbolLayer::Property::TrimEnd );
 
-  connect( mBlankSegmentsDDButton, &QgsPropertyOverrideButton::changed, this, &QgsMarkerLineSymbolLayerWidget::updateBlankSegmentsWidget );
-  connect( mBlankSegmentsDDButton, &QgsPropertyOverrideButton::createAuxiliaryField, this, &QgsMarkerLineSymbolLayerWidget::updateBlankSegmentsWidget );
+  connect( mBlankSegmentsDDButton, &QgsPropertyOverrideButton::changed, this, &QgsMarkerLineSymbolLayerWidget::updatePerFeatureCustomizationWidget );
+  connect( mBlankSegmentsDDButton, &QgsPropertyOverrideButton::createAuxiliaryField, this, &QgsMarkerLineSymbolLayerWidget::updatePerFeatureCustomizationWidget );
+  connect( mExtraItemsDDBtn, &QgsPropertyOverrideButton::changed, this, &QgsMarkerLineSymbolLayerWidget::updatePerFeatureCustomizationWidget );
+  connect( mExtraItemsDDBtn, &QgsPropertyOverrideButton::createAuxiliaryField, this, &QgsMarkerLineSymbolLayerWidget::updatePerFeatureCustomizationWidget );
 
-  updateBlankSegmentsWidget();
+  if ( vectorLayer() )
+  {
+    connect( vectorLayer(), &QgsMapLayer::editingStarted, this, &QgsMarkerLineSymbolLayerWidget::updatePerFeatureCustomizationWidget );
+    connect( vectorLayer(), &QgsMapLayer::editingStopped, this, &QgsMarkerLineSymbolLayerWidget::updatePerFeatureCustomizationWidget );
+  }
+
+  updatePerFeatureCustomizationWidget();
 }
 
 QgsSymbolLayer *QgsTemplatedLineSymbolLayerWidget::symbolLayer()
@@ -2196,6 +2253,18 @@ void QgsTemplatedLineSymbolLayerWidget::setContext( const QgsSymbolWidgetContext
     case Qgis::SymbolType::Fill:
     case Qgis::SymbolType::Hybrid:
       break;
+  }
+
+  if ( context.mapCanvas() )
+  {
+    connect( context.mapCanvas(), &QgsMapCanvas::mapToolSet, this, [this]( QgsMapTool *, QgsMapTool *oldMapTool ) {
+      if ( oldMapTool == mMapToolAddExtraItem.get() )
+        mMapToolAddExtraItem.reset();
+      if ( oldMapTool == mMapToolModifyExtraItem.get() )
+        mMapToolModifyExtraItem.reset();
+      if ( oldMapTool == mMapToolEditBlankSegments.get() )
+        mMapToolEditBlankSegments.reset();
+    } );
   }
 }
 
@@ -2374,58 +2443,93 @@ void QgsTemplatedLineSymbolLayerWidget::setAverageAngle( double val )
 
 void QgsTemplatedLineSymbolLayerWidget::toggleMapToolEditBlankSegments( bool toggled )
 {
-  if ( mMapToolEditBlankSegments )
-  {
-    context().mapCanvas()->unsetMapTool( mMapToolEditBlankSegments );
-    mMapToolEditBlankSegments.reset();
-  }
+  if ( !toggled || ( mMapToolEditBlankSegments.get() && context().mapCanvas()->mapTool() == mMapToolEditBlankSegments.get() ) )
+    return;
 
-  if ( toggled )
-  {
-    switch ( mSymbolType )
-    {
-      case TemplatedSymbolType::Hash:
-        mMapToolEditBlankSegments.reset( new QgsMapToolEditBlankSegments<QgsHashedLineSymbolLayer>( context().mapCanvas(), vectorLayer(), mLayer, blankSegmentsFieldIndex() ) );
-        break;
-
-      case TemplatedSymbolType::Marker:
-        mMapToolEditBlankSegments.reset( new QgsMapToolEditBlankSegments<QgsMarkerLineSymbolLayer>( context().mapCanvas(), vectorLayer(), mLayer, blankSegmentsFieldIndex() ) );
-        break;
-    }
-
-    context().mapCanvas()->setMapTool( mMapToolEditBlankSegments );
-  }
-}
-
-void QgsTemplatedLineSymbolLayerWidget::updateBlankSegmentsWidget()
-{
-  mEditBlankSegmentsBtn->setEnabled( blankSegmentsFieldIndex() > -1 );
-  QString tooltip;
   switch ( mSymbolType )
   {
     case TemplatedSymbolType::Hash:
-      tooltip = tr( "Tool to create blank segments where hashed lines won't be displayed" );
+      mMapToolEditBlankSegments = make_qobject_unique<QgsMapToolEditBlankSegments<QgsHashedLineSymbolLayer>>( context().mapCanvas(), vectorLayer(), mLayer, mBlankSegmentsDDButton );
       break;
 
     case TemplatedSymbolType::Marker:
-      tooltip = tr( "Tool to create blank segments where marker lines won't be displayed" );
+      mMapToolEditBlankSegments = make_qobject_unique<QgsMapToolEditBlankSegments<QgsMarkerLineSymbolLayer>>( context().mapCanvas(), vectorLayer(), mLayer, mBlankSegmentsDDButton );
       break;
   }
 
-  if ( !mEditBlankSegmentsBtn->isEnabled() )
-  {
-    tooltip += u"<br/><br/>"_s + tr( "This tool is disabled because no valid field property has been set" );
-  }
-
-  mEditBlankSegmentsBtn->setToolTip( tooltip );
+  mMapToolEditBlankSegments->setAction( mEditBlankSegmentsAction );
+  context().mapCanvas()->setMapTool( mMapToolEditBlankSegments );
 }
 
-int QgsTemplatedLineSymbolLayerWidget::blankSegmentsFieldIndex() const
+void QgsTemplatedLineSymbolLayerWidget::toggleMapToolAddExtraItem( bool toggled )
 {
-  const QgsProperty blankSegmentsProperty = mLayer->dataDefinedProperties().property( QgsSymbolLayer::Property::BlankSegments );
-  return blankSegmentsProperty && blankSegmentsProperty.isActive() && blankSegmentsProperty.propertyType() == Qgis::PropertyType::Field
-           ? vectorLayer()->fields().indexFromName( blankSegmentsProperty.field() )
-           : -1;
+  if ( !toggled || ( mMapToolAddExtraItem.get() && context().mapCanvas()->mapTool() == mMapToolAddExtraItem.get() ) )
+    return;
+
+  mMapToolAddExtraItem = make_qobject_unique<QgsMapToolAddExtraItem>( context().mapCanvas(), vectorLayer(), mLayer, mExtraItemsDDBtn );
+  mMapToolAddExtraItem->setAction( mAddExtraItemAction );
+  context().mapCanvas()->setMapTool( mMapToolAddExtraItem );
+}
+
+void QgsTemplatedLineSymbolLayerWidget::toggleMapToolModifyExtraItem( bool toggled )
+{
+  if ( !toggled || ( mMapToolModifyExtraItem.get() && context().mapCanvas()->mapTool() == mMapToolModifyExtraItem.get() ) )
+    return;
+
+  mMapToolModifyExtraItem = make_qobject_unique<QgsMapToolModifyExtraItems>( context().mapCanvas(), vectorLayer(), mLayer, mExtraItemsDDBtn );
+  mMapToolModifyExtraItem->setAction( mModifyExtraItemAction );
+  context().mapCanvas()->setMapTool( mMapToolModifyExtraItem );
+}
+
+void QgsTemplatedLineSymbolLayerWidget::updatePerFeatureCustomizationWidget()
+{
+  QString tooltipEditBlankSegment = u"<b>"_s;
+  QString tooltipAddExtraItem = u"<b>"_s;
+  QString tooltipModifyExtraItem = u"<b>"_s;
+  switch ( mSymbolType )
+  {
+    case TemplatedSymbolType::Hash:
+      tooltipEditBlankSegment += tr( "Create blank segments where hashed lines won't be displayed" );
+      tooltipAddExtraItem += tr( "Add extra hash being displayed with the hashed line" );
+      tooltipModifyExtraItem += tr( "Select and modify (move, rotate, delete) extra hashes being displayed with the hashed line" );
+      break;
+
+    case TemplatedSymbolType::Marker:
+      tooltipEditBlankSegment += tr( "Create blank segments where marker lines won't be displayed" );
+      tooltipAddExtraItem += tr( "Add extra marker being displayed with the marker line" );
+      tooltipModifyExtraItem += tr( "Select and modify (move, rotate, delete) extra markers being displayed with the marker line" );
+      break;
+  }
+
+  const QString info = u"</b><br/>"_s
+                       + tr(
+                           "First click to select the line you want to operate on. "
+                           "<br/>Press %1 to deselect the line and select another one."
+                       )
+                           .arg( QKeySequence( QKeySequence::StandardKey::Cancel ).toString( QKeySequence::NativeText ) );
+  tooltipEditBlankSegment += info;
+  tooltipAddExtraItem += info;
+  tooltipModifyExtraItem += info;
+
+  bool enabled = true;
+  if ( QgsPanelWidget *panelWidget = QgsPanelWidget::findParentPanel( this ); !panelWidget || !panelWidget->dockMode() )
+  {
+    // It's not possible to edit blank segments from Layer properties dialog
+    const QString accessFromDialog = tr( "This tool is disabled because map canvas interaction is only possible from Layer Styling panel, Layer properties dialog doesn't allow blank segments creation." );
+    tooltipEditBlankSegment += u"<br/><br/>"_s + accessFromDialog;
+    tooltipAddExtraItem += u"<br/><br/>"_s + accessFromDialog;
+    tooltipModifyExtraItem += u"<br/><br/>"_s + accessFromDialog;
+
+    enabled = false;
+  }
+
+  mEditBlankSegmentsAction->setEnabled( enabled );
+  mAddExtraItemAction->setEnabled( enabled );
+  mModifyExtraItemAction->setEnabled( enabled );
+
+  mEditBlankSegmentsAction->setToolTip( tooltipEditBlankSegment );
+  mAddExtraItemAction->setToolTip( tooltipAddExtraItem );
+  mModifyExtraItemAction->setToolTip( tooltipModifyExtraItem );
 }
 
 ///////////
@@ -5287,11 +5391,13 @@ QgsLineburstSymbolLayerWidget::QgsLineburstSymbolLayerWidget( QgsVectorLayer *vl
   btnChangeColor->setContext( u"symbology"_s );
   btnChangeColor->setShowNoColor( true );
   btnChangeColor->setNoColorString( tr( "Transparent" ) );
+  btnChangeColor->setOpaqueColorString( tr( "Opaque" ) );
   btnChangeColor2->setAllowOpacity( true );
   btnChangeColor2->setColorDialogTitle( tr( "Select Gradient Color" ) );
   btnChangeColor2->setContext( u"symbology"_s );
   btnChangeColor2->setShowNoColor( true );
   btnChangeColor2->setNoColorString( tr( "Transparent" ) );
+  btnChangeColor2->setOpaqueColorString( tr( "Opaque" ) );
 
   mStartColorDDBtn->registerLinkedWidget( btnChangeColor );
   mEndColorDDBtn->registerLinkedWidget( btnChangeColor2 );

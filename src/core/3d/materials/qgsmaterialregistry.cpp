@@ -19,14 +19,21 @@
 #include "qgsapplication.h"
 #include "qgsgoochmaterialsettings.h"
 #include "qgsmetalroughmaterialsettings.h"
+#include "qgsmetalroughtexturedmaterialsettings.h"
 #include "qgsnullmaterialsettings.h"
 #include "qgsphongmaterialsettings.h"
 #include "qgsphongtexturedmaterialsettings.h"
 #include "qgssimplelinematerialsettings.h"
+#include "qgsunlitmaterialsettings.h"
 
 #include <QString>
 
 using namespace Qt::StringLiterals;
+
+QgsAbstractMaterialSettings *QgsMaterialSettingsMetadata::create()
+{
+  return mCreateFunc ? mCreateFunc().release() : nullptr;
+}
 
 QgsMaterialRegistry::QgsMaterialRegistry()
 {}
@@ -45,20 +52,33 @@ bool QgsMaterialRegistry::populate()
     new QgsMaterialSettingsMetadata( u"null"_s, QObject::tr( "Embedded Textures" ), QgsNullMaterialSettings::create, QgsNullMaterialSettings::supportsTechnique, nullptr, QgsApplication::getThemeIcon( u"/mIconPhongTexturedMaterial.svg"_s ) )
   );
   addMaterialSettingsType(
-    new QgsMaterialSettingsMetadata( u"phong"_s, QObject::tr( "Realistic (Phong)" ), QgsPhongMaterialSettings::create, QgsPhongMaterialSettings::supportsTechnique, nullptr, QgsApplication::getThemeIcon( u"/mIconPhongMaterial.svg"_s ) )
+    new QgsMaterialSettingsMetadata( u"metalrough"_s, QObject::tr( "Physically Based" ), QgsMetalRoughMaterialSettings::create, QgsMetalRoughMaterialSettings::supportsTechnique, nullptr, QgsApplication::getThemeIcon( u"/mIconGoochMaterial.svg"_s ) )
   );
-  addMaterialSettingsType(
-    new QgsMaterialSettingsMetadata( u"phongtextured"_s, QObject::tr( "Realistic Textured (Phong)" ), QgsPhongTexturedMaterialSettings::create, QgsPhongTexturedMaterialSettings::supportsTechnique, nullptr, QgsApplication::getThemeIcon( u"/mIconPhongTexturedMaterial.svg"_s ) )
-  );
-  addMaterialSettingsType(
-    new QgsMaterialSettingsMetadata( u"simpleline"_s, QObject::tr( "Single Color (Unlit)" ), QgsSimpleLineMaterialSettings::create, QgsSimpleLineMaterialSettings::supportsTechnique, nullptr, QgsApplication::getThemeIcon( u"/mIconSimpleLineMaterial.svg"_s ) )
-  );
+  addMaterialSettingsType( new QgsMaterialSettingsMetadata(
+    u"metalroughtextured"_s,
+    QObject::tr( "Physically Based (with textures)" ),
+    QgsMetalRoughTexturedMaterialSettings::create,
+    QgsMetalRoughTexturedMaterialSettings::supportsTechnique,
+    nullptr,
+    QgsApplication::getThemeIcon( u"/mIconPhongTexturedMaterial.svg"_s )
+  ) );
   addMaterialSettingsType(
     new QgsMaterialSettingsMetadata( u"gooch"_s, QObject::tr( "CAD (Gooch)" ), QgsGoochMaterialSettings::create, QgsGoochMaterialSettings::supportsTechnique, nullptr, QgsApplication::getThemeIcon( u"/mIconGoochMaterial.svg"_s ) )
   );
+
   addMaterialSettingsType(
-    new QgsMaterialSettingsMetadata( u"metalrough"_s, QObject::tr( "Metal Roughness" ), QgsMetalRoughMaterialSettings::create, QgsMetalRoughMaterialSettings::supportsTechnique, nullptr, QgsApplication::getThemeIcon( u"/mIconGoochMaterial.svg"_s ) )
+    new QgsMaterialSettingsMetadata( u"phong"_s, QObject::tr( "Legacy (Phong)" ), QgsPhongMaterialSettings::create, QgsPhongMaterialSettings::supportsTechnique, nullptr, QgsApplication::getThemeIcon( u"/mIconPhongMaterial.svg"_s ) )
   );
+  addMaterialSettingsType(
+    new QgsMaterialSettingsMetadata( u"phongtextured"_s, QObject::tr( "Legacy Textured (Phong)" ), QgsPhongTexturedMaterialSettings::create, QgsPhongTexturedMaterialSettings::supportsTechnique, nullptr, QgsApplication::getThemeIcon( u"/mIconPhongTexturedMaterial.svg"_s ) )
+  );
+  addMaterialSettingsType(
+    new QgsMaterialSettingsMetadata( u"simpleline"_s, QObject::tr( "Single Color Lines (Unlit)" ), QgsSimpleLineMaterialSettings::create, QgsSimpleLineMaterialSettings::supportsTechnique, nullptr, QgsApplication::getThemeIcon( u"/mIconSimpleLineMaterial.svg"_s ) )
+  );
+  addMaterialSettingsType(
+    new QgsMaterialSettingsMetadata( u"unlit"_s, QObject::tr( "Single Color (Unlit)" ), QgsUnlitMaterialSettings::create, QgsUnlitMaterialSettings::supportsTechnique, nullptr, QgsApplication::getThemeIcon( u"/mIconUnlitMaterial.svg"_s ) )
+  );
+
   return true;
 }
 
@@ -72,12 +92,12 @@ bool QgsMaterialRegistry::addMaterialSettingsType( QgsMaterialSettingsAbstractMe
   return true;
 }
 
-QgsAbstractMaterialSettings *QgsMaterialRegistry::createMaterialSettings( const QString &type ) const
+std::unique_ptr< QgsAbstractMaterialSettings > QgsMaterialRegistry::createMaterialSettings( const QString &type ) const
 {
   if ( !mMetadata.contains( type ) )
     return nullptr;
 
-  return mMetadata[type]->create();
+  return std::unique_ptr< QgsAbstractMaterialSettings >( mMetadata[type]->create() );
 }
 
 QgsMaterialSettingsAbstractMetadata *QgsMaterialRegistry::materialSettingsMetadata( const QString &type ) const

@@ -33,6 +33,7 @@
 #include "qgsfeaturesource.h"
 #include "qgsfields.h"
 #include "qgsmaplayer.h"
+#include "qgsstyleentityvisitor.h"
 #include "qgsvectordataprovider.h"
 #include "qgsvectorlayertoolscontext.h"
 #include "qgsvectorsimplifymethod.h"
@@ -54,6 +55,7 @@ class QgsAbstractGeometrySimplifier;
 class QgsActionManager;
 class QgsConditionalLayerStyles;
 class QgsCurve;
+class QgsCurvePolygon;
 class QgsDiagramLayerSettings;
 class QgsDiagramRenderer;
 class QgsEditorWidgetWrapper;
@@ -81,7 +83,6 @@ class QgsFeedback;
 class QgsAuxiliaryStorage;
 class QgsAuxiliaryLayer;
 class QgsGeometryOptions;
-class QgsStyleEntityVisitorInterface;
 class QgsVectorLayerSelectionProperties;
 class QgsVectorLayerTemporalProperties;
 class QgsFeatureRendererGenerator;
@@ -400,7 +401,7 @@ typedef QSet<int> QgsAttributeIds;
  *
  * \subsection grass Grass data provider (grass)
  *
- * Provider to display vector data in a GRASS GIS layer.
+ * Provider to display vector data in a GRASS layer.
  *
  * \see QgsVectorLayerUtils()
  */
@@ -675,13 +676,13 @@ class CORE_EXPORT QgsVectorLayer : public QgsMapLayer,
 
     QgsVectorDataProvider *dataProvider() final;
     const QgsVectorDataProvider *dataProvider() const final SIP_SKIP;
-    QgsMapLayerSelectionProperties *selectionProperties() override;
-    QgsMapLayerTemporalProperties *temporalProperties() override;
-    QgsMapLayerElevationProperties *elevationProperties() override;
-    QgsAbstractProfileSource *profileSource() override { return this; }
+    QgsMapLayerSelectionProperties *selectionProperties() override SIP_DISALLOWNONE;
+    QgsMapLayerTemporalProperties *temporalProperties() override SIP_DISALLOWNONE;
+    QgsMapLayerElevationProperties *elevationProperties() override SIP_DISALLOWNONE;
+    QgsAbstractProfileSource *profileSource() override SIP_DISALLOWNONE { return this; }
     QString profileSourceId() const override { return id(); }
     QString profileSourceName() const override { return name(); }
-    QgsAbstractProfileGenerator *createProfileGenerator( const QgsProfileRequest &request ) override SIP_FACTORY;
+    QgsAbstractProfileGenerator *createProfileGenerator( const QgsProfileRequest &request ) override SIP_DISALLOWNONE SIP_FACTORY;
 
     /**
      * Sets the text \a encoding of the data provider.
@@ -714,7 +715,7 @@ class CORE_EXPORT QgsVectorLayer : public QgsMapLayer,
     /**
      * Returns the join buffer object.
      */
-    QgsVectorLayerJoinBuffer *joinBuffer() { return mJoinBuffer; }
+    QgsVectorLayerJoinBuffer *joinBuffer() SIP_DISALLOWNONE { return mJoinBuffer; }
 
     /**
      * Returns a const pointer on join buffer object.
@@ -787,7 +788,7 @@ class CORE_EXPORT QgsVectorLayer : public QgsMapLayer,
      * The pointer which is returned directly points to the actions object
      * which is used by the layer, so any changes are immediately applied.
      */
-    QgsActionManager *actions() { return mActions; }
+    QgsActionManager *actions() SIP_DISALLOWNONE { return mActions; }
 
     /**
      * Returns all layer actions defined on this layer.
@@ -808,11 +809,11 @@ class CORE_EXPORT QgsVectorLayer : public QgsMapLayer,
      * \param rect search rectangle
      * \param behavior selection type, allows adding to current selection, removing
      * from selection, etc.
-     * \see invertSelectionInRectangle(QgsRectangle & rect)
+     * \see invertSelectionInRectangle()
      * \see selectByExpression()
      * \see selectByIds()
      */
-    Q_INVOKABLE void selectByRect( QgsRectangle &rect, Qgis::SelectBehavior behavior = Qgis::SelectBehavior::SetSelection );
+    Q_INVOKABLE void selectByRect( const QgsRectangle &rect, Qgis::SelectBehavior behavior = Qgis::SelectBehavior::SetSelection );
 
     /**
      * Selects matching features using an expression.
@@ -865,7 +866,7 @@ class CORE_EXPORT QgsVectorLayer : public QgsMapLayer,
      *
      * \see   invertSelection()
      */
-    Q_INVOKABLE void invertSelectionInRectangle( QgsRectangle &rect );
+    Q_INVOKABLE void invertSelectionInRectangle( const QgsRectangle &rect );
 
     /**
      * Returns a copy of the user-selected features.
@@ -937,10 +938,10 @@ class CORE_EXPORT QgsVectorLayer : public QgsMapLayer,
 
     //! Sets diagram rendering object (takes ownership)
     void setDiagramRenderer( QgsDiagramRenderer *r SIP_TRANSFER );
-    const QgsDiagramRenderer *diagramRenderer() const { return mDiagramRenderer; }
+    const QgsDiagramRenderer *diagramRenderer() const { return mDiagramRenderer.get(); }
 
     void setDiagramLayerSettings( const QgsDiagramLayerSettings &s );
-    const QgsDiagramLayerSettings *diagramLayerSettings() const { return mDiagramLayerSettings; }
+    const QgsDiagramLayerSettings *diagramLayerSettings() const { return mDiagramLayerSettings.get(); }
 
     /**
      * Returns the feature renderer used for rendering the features in the layer in 2D
@@ -948,7 +949,7 @@ class CORE_EXPORT QgsVectorLayer : public QgsMapLayer,
      *
      * \see setRenderer()
      */
-    QgsFeatureRenderer *renderer() { return mRenderer; }
+    QgsFeatureRenderer *renderer() { return mRenderer.get(); }
 
     /**
      * Returns the feature renderer used for rendering the features in the layer in 2D
@@ -957,7 +958,7 @@ class CORE_EXPORT QgsVectorLayer : public QgsMapLayer,
      * \see setRenderer()
      * \note not available in Python bindings
      */
-    const QgsFeatureRenderer *renderer() const SIP_SKIP { return mRenderer; }
+    const QgsFeatureRenderer *renderer() const SIP_SKIP { return mRenderer.get(); }
 
     /**
      * Sets the feature renderer which will be invoked to represent this layer in 2D map views.
@@ -1215,7 +1216,7 @@ class CORE_EXPORT QgsVectorLayer : public QgsMapLayer,
      * \see changeGeometry()
      * \see changeAttributeValue()
     */
-    Q_INVOKABLE bool updateFeature( QgsFeature &feature, bool skipDefaultValues = false );
+    bool updateFeature( QgsFeature &feature, bool skipDefaultValues = false );
 
     /**
      * Inserts a new vertex before the given vertex number,
@@ -1279,13 +1280,26 @@ class CORE_EXPORT QgsVectorLayer : public QgsMapLayer,
     Qgis::VectorEditResult deleteVertex( QgsFeatureId featureId, int vertex );
 
     /**
+     * Deletes a set of vertices from a feature.
+     * \param featureId ID of feature to remove vertices from
+     * \param vertices set of vertex indices to delete
+     * \note Calls to deleteVertices() are only valid for layers in which edits have been enabled
+     * by a call to startEditing(). Changes made to features using this method are not committed
+     * to the underlying data provider until a commitChanges() call is made. Any uncommitted
+     * changes can be discarded by calling rollBack().
+     *
+     * \since QGIS 4.2
+     */
+    Qgis::VectorEditResult deleteVertices( QgsFeatureId featureId, const QSet<int> &vertices );
+
+    /**
      * Deletes the selected features
      * \param deletedCount The number of successfully deleted features
      * \param context The chain of features who will be deleted for feedback and to avoid endless recursions
      *
      * \returns TRUE in case of success and FALSE otherwise
      */
-    Q_INVOKABLE bool deleteSelectedFeatures( int *deletedCount = nullptr, QgsVectorLayer::DeleteContext *context = nullptr );
+    Q_INVOKABLE bool deleteSelectedFeatures( int *deletedCount SIP_OUT = nullptr, QgsVectorLayer::DeleteContext *context = nullptr );
 
     /**
      * Adds a ring to polygon/multipolygon features
@@ -1408,6 +1422,19 @@ class CORE_EXPORT QgsVectorLayer : public QgsMapLayer,
     Q_INVOKABLE Qgis::GeometryOperationResult addPart( QgsCurve *ring SIP_TRANSFER ) SIP_PYNAME( addCurvedPart );
 
     /**
+     * Adds a new polygon part to a multipart feature.
+     *
+     * \note Calls to addPart() are only valid for layers in which edits have been enabled
+     * by a call to startEditing(). Changes made to features using this method are not committed
+     * to the underlying data provider until a commitChanges() call is made. Any uncommitted
+     * changes can be discarded by calling rollBack().
+     *
+     * \note available in Python as addPolygonPart
+     * \since QGIS 4.4
+     */
+    Q_INVOKABLE Qgis::GeometryOperationResult addPart( QgsCurvePolygon *polygon SIP_TRANSFER ) SIP_PYNAME( addPolygonPart );
+
+    /**
      * Translates feature by dx, dy
      * \param featureId id of the feature to translate
      * \param dx translation of x-coordinate
@@ -1509,8 +1536,8 @@ class CORE_EXPORT QgsVectorLayer : public QgsMapLayer,
     /**
      * Splits features cut by the given curve
      * \param curve curve that splits the layer features
-     * \param[out] topologyTestPoints topological points to be tested against other layers
-     * \param preserveCircular whether circular strings are preserved after splitting
+     * \param[out] topologyTestPoints topological points to be tested against other layers. Points from curve geometries are not yet fully supported.
+     * \param preserveCircular whether if circular strings are reconstructed from segmentized geometries after splitting. From GEOS 3.15 on, this parameter is unused, and circular strings are preserved.
      * \param topologicalEditing TRUE if topological editing is enabled
      * \returns Qgis::GeometryOperationResult
      *
@@ -1604,14 +1631,14 @@ class CORE_EXPORT QgsVectorLayer : public QgsMapLayer,
      * \note Labels will only be rendered if labelsEnabled() returns TRUE.
      * \see labelsEnabled()
      */
-    const QgsAbstractVectorLayerLabeling *labeling() const SIP_SKIP { return mLabeling; }
+    const QgsAbstractVectorLayerLabeling *labeling() const SIP_SKIP { return mLabeling.get(); }
 
     /**
      * Access to labeling configuration. May be NULLPTR if labeling is not used.
      * \note Labels will only be rendered if labelsEnabled() returns TRUE.
      * \see labelsEnabled()
      */
-    QgsAbstractVectorLayerLabeling *labeling() { return mLabeling; }
+    QgsAbstractVectorLayerLabeling *labeling() { return mLabeling.get(); }
 
     /**
      * Sets labeling configuration. Takes ownership of the object.
@@ -1708,7 +1735,7 @@ class CORE_EXPORT QgsVectorLayer : public QgsMapLayer,
      * \see changeAttributeValue()
      * \see updateFeature()
      */
-    Q_INVOKABLE bool changeGeometry( QgsFeatureId fid, QgsGeometry &geometry, bool skipDefaultValue = false );
+    bool changeGeometry( QgsFeatureId fid, QgsGeometry &geometry, bool skipDefaultValue = false );
 
     /**
      * Changes an attribute value for a feature (but does not immediately commit the changes).
@@ -1808,6 +1835,35 @@ class CORE_EXPORT QgsVectorLayer : public QgsMapLayer,
      *
      */
     Q_INVOKABLE void removeFieldAlias( int index );
+
+    /**
+       * Sets the custom comment for the field.
+       * \param index attribute index
+       * \param customCommentString custom comment (can be empty as well)
+       * \since QGIS 4.2
+       */
+    Q_INVOKABLE void setFieldCustomComment( int index, const QString &customCommentString );
+
+    /**
+       * Removes the custom comment for the field.
+       * \param index attribute index
+       * \since QGIS 4.2
+       */
+    Q_INVOKABLE void removeFieldCustomComment( int index );
+
+    /**
+       * Returns the custom comment for the field.
+       * \param index attribute index
+       * \since QGIS 4.2
+       */
+    Q_INVOKABLE QString attributeCustomComment( int index ) const;
+
+    /**
+       * Returns a map of all the custom comments.
+       * Key is the attribute name and value the custom comment for that attribute
+       * \since QGIS 4.2
+       */
+    QgsStringMap attributeCustomComments() const;
 
     /**
      * Renames an attribute field  (but does not commit it).
@@ -2248,7 +2304,7 @@ class CORE_EXPORT QgsVectorLayer : public QgsMapLayer,
      * \see minimumValue()
      * \see maximumValue()
      */
-    QSet<QVariant> uniqueValues( int fieldIndex, int limit = -1 ) const final;
+    Q_INVOKABLE QSet<QVariant> uniqueValues( int fieldIndex, int limit = -1 ) const final;
 
     /**
      * Returns unique string values of an attribute which contain a specified subset string. Subset
@@ -2279,7 +2335,7 @@ class CORE_EXPORT QgsVectorLayer : public QgsMapLayer,
      * \see minimumAndMaximumValue()
      * \see uniqueValues()
      */
-    QVariant minimumValue( int index ) const final;
+    Q_INVOKABLE QVariant minimumValue( int index ) const final;
 
     /**
      * Returns the maximum value for an attribute column or an invalid variant in case of error.
@@ -2295,7 +2351,7 @@ class CORE_EXPORT QgsVectorLayer : public QgsMapLayer,
      * \see minimumAndMaximumValue()
      * \see uniqueValues()
      */
-    QVariant maximumValue( int index ) const final;
+    Q_INVOKABLE QVariant maximumValue( int index ) const final;
 
 
     /**
@@ -2432,7 +2488,7 @@ class CORE_EXPORT QgsVectorLayer : public QgsMapLayer,
      *
      * \since QGIS 3.4
      */
-    QgsGeometryOptions *geometryOptions() const;
+    QgsGeometryOptions *geometryOptions() const SIP_DISALLOWNONE;
 
     /**
      * Controls, if the layer is allowed to commit changes. If this is set to FALSE
@@ -2477,7 +2533,7 @@ class CORE_EXPORT QgsVectorLayer : public QgsMapLayer,
      *
      * \since QGIS 3.10
      */
-    QgsStoredExpressionManager *storedExpressionManager() { return mStoredExpressionManager; }
+    QgsStoredExpressionManager *storedExpressionManager() SIP_DISALLOWNONE { return mStoredExpressionManager; }
 
   public slots:
 
@@ -2832,6 +2888,7 @@ class CORE_EXPORT QgsVectorLayer : public QgsMapLayer,
     void onRelationsLoaded();
     void onSymbolsCounted();
     void onDirtyTransaction( const QString &sql, const QString &name );
+    void onDependencyAfterCommitChanges();
     void emitDataChanged();
 
   private:
@@ -2889,6 +2946,9 @@ class CORE_EXPORT QgsVectorLayer : public QgsMapLayer,
     void createEditBuffer();
     void clearEditBuffer();
 
+    //! Apply render settings from data provider
+    void applyRendererSettings();
+
     QgsConditionalLayerStyles *mConditionalStyles = nullptr;
     QgsVectorDataProvider *mDataProvider = nullptr;
     QgsVectorLayerSelectionProperties *mSelectionProperties = nullptr;
@@ -2930,6 +2990,9 @@ class CORE_EXPORT QgsVectorLayer : public QgsMapLayer,
     //! Map that stores the aliases for attributes. Key is the attribute name and value the alias for that attribute
     QgsStringMap mAttributeAliasMap;
 
+    //! Map that stores the custom comments for attributes. Key is the attribute name and value the custom comment for that attribute
+    QgsStringMap mAttributeCustomCommentMap;
+
     //! Map which stores default value expressions for fields
     QMap<QString, QgsDefaultValue> mDefaultExpressionMap;
 
@@ -2964,13 +3027,13 @@ class CORE_EXPORT QgsVectorLayer : public QgsMapLayer,
     Qgis::WkbType mWkbType = Qgis::WkbType::Unknown;
 
     //! Renderer object which holds the information about how to display the features
-    QgsFeatureRenderer *mRenderer = nullptr;
+    std::unique_ptr<QgsFeatureRenderer> mRenderer;
 
     //! Simplification object which holds the information about how to simplify the features for fast rendering
     QgsVectorSimplifyMethod mSimplifyMethod;
 
     //! Labeling configuration
-    QgsAbstractVectorLayerLabeling *mLabeling = nullptr;
+    std::unique_ptr<QgsAbstractVectorLayerLabeling> mLabeling;
 
     //! True if labels are enabled
     bool mLabelsEnabled = false;
@@ -2996,13 +3059,13 @@ class CORE_EXPORT QgsVectorLayer : public QgsMapLayer,
     QgsVectorLayerJoinBuffer *mJoinBuffer = nullptr;
 
     //! stores information about expression fields on this layer
-    QgsExpressionFieldBuffer *mExpressionFieldBuffer = nullptr;
+    std::unique_ptr<QgsExpressionFieldBuffer> mExpressionFieldBuffer;
 
     //diagram rendering object. 0 if diagram drawing is disabled
-    QgsDiagramRenderer *mDiagramRenderer = nullptr;
+    std::unique_ptr<QgsDiagramRenderer> mDiagramRenderer;
 
     //stores infos about diagram placement (placement type, priority, position distance)
-    QgsDiagramLayerSettings *mDiagramLayerSettings = nullptr;
+    std::unique_ptr<QgsDiagramLayerSettings> mDiagramLayerSettings;
 
     mutable bool mValidExtent2D = false;
     mutable bool mLazyExtent2D = true;

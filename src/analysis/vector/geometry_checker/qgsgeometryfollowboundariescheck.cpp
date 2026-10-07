@@ -29,14 +29,12 @@ QgsGeometryFollowBoundariesCheck::QgsGeometryFollowBoundariesCheck( QgsGeometryC
   mCheckLayer = checkLayer;
   if ( mCheckLayer )
   {
-    mIndex = new QgsSpatialIndex( *mCheckLayer->dataProvider() );
+    mIndex = std::make_unique<QgsSpatialIndex>( *mCheckLayer->dataProvider() );
   }
 }
 
 QgsGeometryFollowBoundariesCheck::~QgsGeometryFollowBoundariesCheck()
-{
-  delete mIndex;
-}
+{}
 
 QgsGeometryCheck::Result QgsGeometryFollowBoundariesCheck::collectErrors(
   const QMap<QString, QgsFeaturePool *> &featurePools, QList<QgsGeometryCheckError *> &errors, QStringList &messages, QgsFeedback *feedback, const LayerFeatureIds &ids
@@ -104,7 +102,7 @@ QgsGeometryCheck::Result QgsGeometryFollowBoundariesCheck::collectErrors(
 
         const QgsAbstractGeometry *refGeom = refFeature.geometry().constGet();
         std::unique_ptr<QgsGeometryEngine> refgeomEngine( QgsGeometry::createGeometryEngine( refGeom, mContext->tolerance ) );
-        const QgsGeometry reducedRefGeom( refgeomEngine->buffer( -mContext->tolerance, 0 ) );
+        const QgsGeometry reducedRefGeom( refgeomEngine->buffer( -mContext->tolerance, 0, nullptr, feedback ) );
         if ( !( geomEngine->contains( reducedRefGeom.constGet() ) || geomEngine->disjoint( reducedRefGeom.constGet() ) ) )
         {
           errors.append( new QgsGeometryCheckError( this, layerFeature, QgsPointXY( geom->centroid() ) ) );

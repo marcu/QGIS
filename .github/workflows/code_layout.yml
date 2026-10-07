@@ -20,9 +20,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.13'
       - name: Install requirements
@@ -34,7 +36,7 @@ jobs:
         run: |
           mkdir build
           cd build
-          cmake -DUSE_CCACHE=OFF -DWITH_CORE=OFF -DWITH_APIDOC=ON -DWITH_ASTYLE=ON -DENABLE_TESTS=ON \
+          cmake -DUSE_CCACHE=OFF -DWITH_CORE=OFF -DWITH_APIDOC=ON -DENABLE_TESTS=ON \
                 -DWITH_DOT=NO -DWERROR=ON ..
           make -j3 apidoc
       - name: Run Tests
@@ -44,12 +46,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install Requirements
         run: |
-          sudo apt install -y \
-              cpanminus
-            cpanm --notest App::Licensecheck
+          sudo apt-get install -y licensecheck
 
       - name: Run License Check
         run: ./tests/code_layout/test_licenses.sh
@@ -58,7 +60,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Def Window Title Test
         run: ./tests/code_layout/test_defwindowtitle.sh
 
@@ -66,15 +70,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Run QgsScrollArea check
         run: ./tests/code_layout/test_qgsscrollarea.sh
+
+  qgsfontcombobox_check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run QgsFontComboBox check
+        run: ./tests/code_layout/test_qgsfontcombobox.sh
 
   qvariant_no_brace_init:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: No brace initialization of QVariant variables
         run: ./tests/code_layout/test_qvariant_no_brace_init.sh
 
@@ -82,7 +100,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: No module-wide imports of Qt modules
         run: ./tests/code_layout/test_qt_imports.sh
 
@@ -90,7 +110,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.13'
       - name: Install Requirements
@@ -98,7 +118,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install autopep8 nose2 mock termcolor pyyaml
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Sip Include Test
         run: ./tests/code_layout/sipify/test_sip_include.sh
       - name: Sip Files Up To Date
@@ -108,7 +130,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install Requirements
         run: |
@@ -121,9 +145,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.13'
       - name: Run Check

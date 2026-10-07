@@ -119,6 +119,7 @@ QgsPoint3DSymbolWidget::QgsPoint3DSymbolWidget( QWidget *parent )
     connect( spinBox, static_cast<void ( QDoubleSpinBox::* )( double )>( &QDoubleSpinBox::valueChanged ), this, &QgsPoint3DSymbolWidget::changed );
   connect( lineEditModel, &QgsAbstractFileContentSourceLineEdit::sourceChanged, this, &QgsPoint3DSymbolWidget::changed );
   connect( widgetMaterial, &QgsMaterialWidget::changed, this, &QgsPoint3DSymbolWidget::changed );
+  connect( widgetMaterial, &QgsMaterialWidget::showPanel, this, &QgsPoint3DSymbolWidget::openPanel );
   connect( btnChangeSymbol, static_cast<void ( QgsSymbolButton::* )()>( &QgsSymbolButton::changed ), this, &QgsPoint3DSymbolWidget::changed );
 
   // Sync between billboard height and TZ
@@ -158,6 +159,8 @@ QgsPoint3DSymbolWidget::QgsPoint3DSymbolWidget( QWidget *parent )
   connect( mButtonDDRotationX, &QgsPropertyOverrideButton::changed, this, &QgsPoint3DSymbolWidget::changed );
   connect( mButtonDDRotationY, &QgsPropertyOverrideButton::changed, this, &QgsPoint3DSymbolWidget::changed );
   connect( mButtonDDRotationZ, &QgsPropertyOverrideButton::changed, this, &QgsPoint3DSymbolWidget::changed );
+
+  widgetMaterial->setDockMode( dockMode() );
 }
 
 Qgs3DSymbolWidget *QgsPoint3DSymbolWidget::create( QgsVectorLayer * )
@@ -174,7 +177,7 @@ void QgsPoint3DSymbolWidget::setSymbol( const QgsAbstract3DSymbol *symbol, QgsVe
   cboAltClamping->setCurrentIndex( static_cast<int>( pointSymbol->altitudeClamping() ) );
 
   cboShape->setCurrentIndex( cboShape->findData( QVariant::fromValue( pointSymbol->shape() ) ) );
-  Qgis::MaterialRenderingTechnique technique = Qgis::MaterialRenderingTechnique::InstancedPoints;
+  mRenderingTechnique = Qgis::MaterialRenderingTechnique::InstancedPoints;
   bool forceNullMaterial = false;
   switch ( pointSymbol->shape() )
   {
@@ -207,7 +210,7 @@ void QgsPoint3DSymbolWidget::setSymbol( const QgsAbstract3DSymbol *symbol, QgsVe
       forceNullMaterial = ( pointSymbol->shapeProperties().contains( u"overwriteMaterial"_s ) && !pointSymbol->shapeProperties().value( u"overwriteMaterial"_s ).toBool() )
                           || !pointSymbol->materialSettings()
                           || pointSymbol->materialSettings()->type() == "null"_L1;
-      technique = Qgis::MaterialRenderingTechnique::TrianglesFromModel;
+      mRenderingTechnique = Qgis::MaterialRenderingTechnique::TrianglesFromModel;
 
       whileBlocking( mComboModelUpAxis )->setCurrentIndex( mComboModelUpAxis->findData( pointSymbol->shapeProperty( u"upAxis"_s ).toString() ) );
       whileBlocking( mComboModelForwardAxis )->setCurrentIndex( mComboModelForwardAxis->findData( pointSymbol->shapeProperty( u"forwardAxis"_s ).toString() ) );
@@ -218,14 +221,16 @@ void QgsPoint3DSymbolWidget::setSymbol( const QgsAbstract3DSymbol *symbol, QgsVe
       {
         btnChangeSymbol->setSymbol( pointSymbol->billboardSymbol()->clone() );
       }
-      technique = Qgis::MaterialRenderingTechnique::Points;
+      mRenderingTechnique = Qgis::MaterialRenderingTechnique::Billboards;
       break;
     case Qgis::Point3DShape::ExtrudedText:
       break;
   }
 
   widgetMaterial->setSettings( pointSymbol->materialSettings(), layer );
-  widgetMaterial->setTechnique( technique );
+  widgetMaterial->setTechnique( mRenderingTechnique );
+  widgetMaterial->setFilterByTechnique( true );
+  emit renderingTechniqueChanged();
 
   if ( forceNullMaterial )
   {
@@ -266,7 +271,7 @@ QgsAbstract3DSymbol *QgsPoint3DSymbolWidget::symbol()
 {
   QVariantMap vm;
   auto sym = std::make_unique<QgsPoint3DSymbol>();
-  sym->setBillboardSymbol( static_cast<QgsMarkerSymbol *>( QgsSymbol::defaultSymbol( Qgis::GeometryType::Point ) ) );
+  sym->setBillboardSymbol( qgis::unique_ptr_static_cast<QgsMarkerSymbol>( QgsSymbol::defaultSymbol( Qgis::GeometryType::Point ) ).release() );
   switch ( cboShape->currentData().value<Qgis::Point3DShape>() )
   {
     case Qgis::Point3DShape::Sphere:
@@ -315,7 +320,7 @@ QgsAbstract3DSymbol *QgsPoint3DSymbolWidget::symbol()
   sym->setAltitudeClamping( static_cast<Qgis::AltitudeClamping>( cboAltClamping->currentIndex() ) );
   sym->setShape( cboShape->itemData( cboShape->currentIndex() ).value<Qgis::Point3DShape>() );
   sym->setShapeProperties( vm );
-  sym->setMaterialSettings( widgetMaterial->settings() );
+  sym->setMaterialSettings( widgetMaterial->settings().release() );
   sym->setTransform( tr );
 
   QgsPropertyCollection ddp;
@@ -336,6 +341,17 @@ QgsAbstract3DSymbol *QgsPoint3DSymbolWidget::symbol()
 QString QgsPoint3DSymbolWidget::symbolType() const
 {
   return u"point"_s;
+}
+
+Qgis::MaterialRenderingTechnique QgsPoint3DSymbolWidget::renderingTechnique() const
+{
+  return mRenderingTechnique;
+}
+
+void QgsPoint3DSymbolWidget::setDockMode( bool dockMode )
+{
+  widgetMaterial->setDockMode( dockMode );
+  Qgs3DSymbolWidget::setDockMode( dockMode );
 }
 
 void QgsPoint3DSymbolWidget::onShapeChanged()
@@ -368,7 +384,7 @@ void QgsPoint3DSymbolWidget::onShapeChanged()
   materialsGroupBox->show();
   transformationWidget->show();
   QList<QWidget *> activeWidgets;
-  Qgis::MaterialRenderingTechnique technique = Qgis::MaterialRenderingTechnique::InstancedPoints;
+  mRenderingTechnique = Qgis::MaterialRenderingTechnique::InstancedPoints;
   switch ( cboShape->currentData().value<Qgis::Point3DShape>() )
   {
     case Qgis::Point3DShape::Sphere:
@@ -391,20 +407,22 @@ void QgsPoint3DSymbolWidget::onShapeChanged()
       break;
     case Qgis::Point3DShape::Model:
       activeWidgets << labelModel << lineEditModel << mComboModelForwardAxis << mComboModelUpAxis << labelUpAxis << labelForwardAxis;
-      technique = Qgis::MaterialRenderingTechnique::TrianglesFromModel;
+      mRenderingTechnique = Qgis::MaterialRenderingTechnique::TrianglesFromModel;
       break;
     case Qgis::Point3DShape::Billboard:
       activeWidgets << labelBillboardHeight << spinBillboardHeight << labelBillboardSymbol << btnChangeSymbol;
       // Always hide material and transformationwidget for billboard
       materialsGroupBox->hide();
       transformationWidget->hide();
-      technique = Qgis::MaterialRenderingTechnique::Points;
+      mRenderingTechnique = Qgis::MaterialRenderingTechnique::Billboards;
       break;
     case Qgis::Point3DShape::ExtrudedText:
       break;
   }
 
-  widgetMaterial->setTechnique( technique );
+  widgetMaterial->setTechnique( mRenderingTechnique );
+  widgetMaterial->setFilterByTechnique( true );
+  emit renderingTechniqueChanged();
 
   if ( cboShape->currentIndex() == 6 )
   {
@@ -419,4 +437,9 @@ void QgsPoint3DSymbolWidget::onShapeChanged()
   }
 
   emit changed();
+}
+
+void QgsPoint3DSymbolWidget::setMode( Qgis::MaterialWidgetMode mode )
+{
+  widgetMaterial->setMode( mode );
 }

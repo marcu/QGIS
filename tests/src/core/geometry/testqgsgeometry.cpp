@@ -86,8 +86,6 @@ class TestQgsGeometry : public QgsTest
     void vertexIterator();
     void partIterator();
 
-    void geos();
-
     void curveIndexOf_data();
     void curveIndexOf();
     void splitCurve_data();
@@ -167,6 +165,7 @@ class TestQgsGeometry : public QgsTest
     void boundingBox3D();
     void minimalEnclosingCircle();
     void splitGeometry();
+    void splitGeometryByCurve();
     void snappedToGrid();
 
     void convertGeometryCollectionToSubclass();
@@ -488,7 +487,14 @@ void TestQgsGeometry::isValid()
   curve.addCurve( line.clone() );
   QVERIFY( curve.isValid( error ) );
   curve.addCurve( circ.clone() );
+#if GEOS_VERSION_MAJOR > 3 || ( GEOS_VERSION_MAJOR == 3 && GEOS_VERSION_MINOR >= 15 )
+  // The curve at this point is no longer valid, as the circle's start coords differ from the line's end coors.
+  // (From GEOS: Sections of CompoundCurve are not contiguous: curve 0 ends at 1 1 ; curve 1 begins at 0 0)
+  QVERIFY( !curve.isValid( error ) );
+  QCOMPARE( error, u"QGIS geometry cannot be converted to a GEOS geometry"_s );
+#else
   QVERIFY( curve.isValid( error ) );
+#endif
   QgsLineString invalidLine;
   invalidLine.addVertex( QgsPoint( 0, 0 ) );
   curve.addCurve( invalidLine.clone() );
@@ -501,55 +507,263 @@ void TestQgsGeometry::equality()
   // null geometries
   QVERIFY( !QgsGeometry().isExactlyEqual( QgsGeometry() ) );
 
-  // compare to null
-  QgsGeometry g1( std::make_unique<QgsPoint>( 1.0, 2.0 ) );
-  QVERIFY( !g1.isExactlyEqual( QgsGeometry() ) );
-  QVERIFY( !QgsGeometry().isExactlyEqual( g1 ) );
+  // ========= POINT
+  {
+    // compare to null
+    QgsGeometry g1 = QgsGeometry::fromWkt( "Point( 1.0 2.0 )" );
+    QVERIFY( !g1.isExactlyEqual( QgsGeometry() ) );
+    QVERIFY( !QgsGeometry().isExactlyEqual( g1 ) );
 
-  // compare implicitly shared copies
-  QgsGeometry g2( g1 );
-  QVERIFY( g2.isExactlyEqual( g1 ) );
-  QVERIFY( g1.isExactlyEqual( g2 ) );
-  QVERIFY( g1.isExactlyEqual( g1 ) );
+    // compare implicitly shared copies
+    QgsGeometry g2( g1 );
+    QVERIFY( g2.isExactlyEqual( g1 ) );
+    QVERIFY( g1.isExactlyEqual( g2 ) );
+    QVERIFY( g1.isExactlyEqual( g1 ) );
 
-  // equal geometry, but different internal data
-  g2 = QgsGeometry::fromWkt( "Point( 1.0 2.0 )" );
-  QVERIFY( g2.isExactlyEqual( g1 ) );
-  QVERIFY( g1.isExactlyEqual( g2 ) );
+    // equal geometry, but different internal data
+    g2 = QgsGeometry::fromWkt( "Point( 1.0 2.0 )" );
+    QVERIFY( g2.isExactlyEqual( g1, Qgis::GeometryBackend::QGIS ) );
+    QVERIFY( g1.isExactlyEqual( g2, Qgis::GeometryBackend::QGIS ) );
+    QVERIFY( g2.isExactlyEqual( g1, Qgis::GeometryBackend::GEOS ) );
+    QVERIFY( g1.isExactlyEqual( g2, Qgis::GeometryBackend::GEOS ) );
 
-  // tpopologically equal
-  g2 = QgsGeometry::fromWkt( "MultiPoint(( 1.0 2.0 ))" );
-  QVERIFY( g2.isTopologicallyEqual( g1 ) );
-  QVERIFY( g1.isTopologicallyEqual( g2 ) );
+    // topologically equal
+    g2 = QgsGeometry::fromWkt( "MultiPoint(( 1.0 2.0 ))" );
+    QVERIFY( g2.isTopologicallyEqual( g1 ) );
+    QVERIFY( g1.isTopologicallyEqual( g2 ) );
 
-  g2 = QgsGeometry::fromWkt( "MultiPoint(( 1.0 2.0 ), ( 3.0 2.0 ))" );
-  QVERIFY( !g2.isTopologicallyEqual( g1 ) );
-  QVERIFY( !g1.isTopologicallyEqual( g2 ) );
+    // topologically equal - duplicated data
+    g2 = QgsGeometry::fromWkt( "MultiPoint(( 1.0 2.0 ), ( 1.0 2.0 ))" );
+    QVERIFY( g2.isTopologicallyEqual( g1 ) );
+    QVERIFY( g1.isTopologicallyEqual( g2 ) );
 
-  // fuzzy equal
-  g2 = QgsGeometry::fromWkt( "Point( 1.5 2.5 ))" );
-  QVERIFY( g2.isFuzzyEqual( g1, 0.50, Qgis::GeometryBackend::QGIS ) );
-  QVERIFY( g1.isFuzzyEqual( g2, 0.50, Qgis::GeometryBackend::QGIS ) );
-  QVERIFY( g2.isFuzzyEqual( g1, 0.71, Qgis::GeometryBackend::GEOS ) );
-  QVERIFY( g1.isFuzzyEqual( g2, 0.71, Qgis::GeometryBackend::GEOS ) );
+    // topologically equal - not the same at all
+    g2 = QgsGeometry::fromWkt( "MultiPoint(( 1.0 2.0 ), ( -1.0 2.0 ))" );
+    QVERIFY( !g2.isTopologicallyEqual( g1 ) );
+    QVERIFY( !g1.isTopologicallyEqual( g2 ) );
 
-  QVERIFY( !g2.isFuzzyEqual( g1, 0.49, Qgis::GeometryBackend::QGIS ) );
-  QVERIFY( !g2.isFuzzyEqual( g1, 0.70, Qgis::GeometryBackend::GEOS ) );
+    // fuzzy equal
+    g2 = QgsGeometry::fromWkt( "Point( 1.5 2.5 ))" );
+    QVERIFY( g2.isFuzzyEqual( g1, 0.50, Qgis::GeometryBackend::QGIS ) );
+    QVERIFY( g1.isFuzzyEqual( g2, 0.50, Qgis::GeometryBackend::QGIS ) );
+    QVERIFY( g2.isFuzzyEqual( g1, 0.71, Qgis::GeometryBackend::GEOS ) );
+    QVERIFY( g1.isFuzzyEqual( g2, 0.71, Qgis::GeometryBackend::GEOS ) );
 
-  // different dimensionality
-  g2 = QgsGeometry::fromWkt( "PointM( 1.0 2.0 3.0)" );
-  QVERIFY( !g2.isExactlyEqual( g1 ) );
-  QVERIFY( !g1.isExactlyEqual( g2 ) );
+    // fuzzy equal - below threshold
+    QVERIFY( !g2.isFuzzyEqual( g1, 0.49, Qgis::GeometryBackend::QGIS ) );
+    QVERIFY( !g2.isFuzzyEqual( g1, 0.70, Qgis::GeometryBackend::GEOS ) );
 
-  // different type
-  g2 = QgsGeometry::fromWkt( "LineString( 1.0 2.0, 3.0 4.0 )" );
-  QVERIFY( !g2.isExactlyEqual( g1 ) );
-  QVERIFY( !g1.isExactlyEqual( g2 ) );
+    // different dimensionality
+    g2 = QgsGeometry::fromWkt( "PointM( 1.0 2.0 3.0 )" );
+    QVERIFY( !g2.isExactlyEqual( g1 ) );
+    QVERIFY( !g1.isExactlyEqual( g2 ) );
 
-  // different direction
-  g1 = QgsGeometry::fromWkt( "LineString( 3.0 4.0, 1.0 2.0 )" );
-  QVERIFY( !g2.isExactlyEqual( g1 ) );
-  QVERIFY( !g1.isExactlyEqual( g2 ) );
+    // different type
+    g2 = QgsGeometry::fromWkt( "LineString( 1.0 2.0, 3.0 4.0 )" );
+    QVERIFY( !g2.isExactlyEqual( g1 ) );
+    QVERIFY( !g1.isExactlyEqual( g2 ) );
+  }
+
+  // ========= LINESTRING
+  {
+    // compare to null
+    QgsGeometry g1 = QgsGeometry::fromWkt( "LineString( 1.0 2.0, 10.0 20.0 )" );
+    QVERIFY( !g1.isExactlyEqual( QgsGeometry() ) );
+    QVERIFY( !QgsGeometry().isExactlyEqual( g1 ) );
+
+    // compare implicitly shared copies
+    QgsGeometry g2( g1 );
+    QVERIFY( g2.isExactlyEqual( g1 ) );
+    QVERIFY( g1.isExactlyEqual( g2 ) );
+    QVERIFY( g1.isExactlyEqual( g1 ) );
+
+    // equal geometry, but different internal data
+    g2 = QgsGeometry::fromWkt( "LineString( 1.0 2.0, 10.0 20.0 )" );
+    QVERIFY( g2.isExactlyEqual( g1, Qgis::GeometryBackend::QGIS ) );
+    QVERIFY( g1.isExactlyEqual( g2, Qgis::GeometryBackend::QGIS ) );
+    QVERIFY( g2.isExactlyEqual( g1, Qgis::GeometryBackend::GEOS ) );
+    QVERIFY( g1.isExactlyEqual( g2, Qgis::GeometryBackend::GEOS ) );
+
+    // topologically equal
+    g2 = QgsGeometry::fromWkt( "MultiLineString(( 1.0 2.0, 10.0 20.0 ))" );
+    QVERIFY( g2.isTopologicallyEqual( g1 ) );
+    QVERIFY( g1.isTopologicallyEqual( g2 ) );
+
+    // topologically equal - duplicated data
+    g2 = QgsGeometry::fromWkt( "MultiLineString(( 1.0 2.0, 10.0 20.0 ), ( 1.0 2.0, 10.0 20.0 ))" );
+    QVERIFY( g2.isTopologicallyEqual( g1 ) );
+    QVERIFY( g1.isTopologicallyEqual( g2 ) );
+
+    // topologically equal - duplicated data inverted
+    g2 = QgsGeometry::fromWkt( "MultiLineString(( 1.0 2.0, 10.0 20.0 ), ( 10.0 20.0, 1.0 2.0 ))" );
+    QVERIFY( g2.isTopologicallyEqual( g1 ) );
+    QVERIFY( g1.isTopologicallyEqual( g2 ) );
+
+    // topologically equal - not the same at all
+    g2 = QgsGeometry::fromWkt( "MultiLineString(( 1.0 2.0, 10.0 20.0 ), ( -1.0 2.0, 10.0 20.0 ))" );
+    QVERIFY( !g2.isTopologicallyEqual( g1 ) );
+    QVERIFY( !g1.isTopologicallyEqual( g2 ) );
+
+    // fuzzy equal
+    g2 = QgsGeometry::fromWkt( "LineString( 1.5 2.5, 10.5 20.5 )" );
+    QVERIFY( g2.isFuzzyEqual( g1, 0.50, Qgis::GeometryBackend::QGIS ) );
+    QVERIFY( g1.isFuzzyEqual( g2, 0.50, Qgis::GeometryBackend::QGIS ) );
+    QVERIFY( g2.isFuzzyEqual( g1, 0.71, Qgis::GeometryBackend::GEOS ) );
+    QVERIFY( g1.isFuzzyEqual( g2, 0.71, Qgis::GeometryBackend::GEOS ) );
+
+    // fuzzy equal - below threshold
+    QVERIFY( !g2.isFuzzyEqual( g1, 0.49, Qgis::GeometryBackend::QGIS ) );
+    QVERIFY( !g2.isFuzzyEqual( g1, 0.70, Qgis::GeometryBackend::GEOS ) );
+
+    // different dimensionality
+    g2 = QgsGeometry::fromWkt( "LineStringM( 1.0 2.0 3.0 )" );
+    QVERIFY( !g2.isExactlyEqual( g1 ) );
+    QVERIFY( !g1.isExactlyEqual( g2 ) );
+
+    // different type
+    g2 = QgsGeometry::fromWkt( "Point( 1.0 2.0, 3.0 4.0 )" );
+    QVERIFY( !g2.isExactlyEqual( g1 ) );
+    QVERIFY( !g1.isExactlyEqual( g2 ) );
+
+    // different direction
+    g2 = QgsGeometry::fromWkt( "LineString( 10.0 20.0, 1.0 2.0 )" );
+    QVERIFY( !g2.isExactlyEqual( g1 ) );
+    QVERIFY( !g1.isExactlyEqual( g2 ) );
+    QVERIFY( g2.isTopologicallyEqual( g1 ) );
+    QVERIFY( g1.isTopologicallyEqual( g2 ) );
+
+    // ============ 3D
+    g1 = QgsGeometry::fromWkt( "LineStringZ( 1.0 2.0 3.0, 10.0 20.0 30.0 )" );
+
+    // equal geometry, but different internal data
+    g2 = QgsGeometry::fromWkt( "LineStringZ( 1.0 2.0 3.0, 10.0 20.0 30.0 )" );
+    QVERIFY( g2.isExactlyEqual( g1, Qgis::GeometryBackend::QGIS ) );
+    QVERIFY( g1.isExactlyEqual( g2, Qgis::GeometryBackend::QGIS ) );
+    QVERIFY( g2.isExactlyEqual( g1, Qgis::GeometryBackend::GEOS ) );
+    QVERIFY( g1.isExactlyEqual( g2, Qgis::GeometryBackend::GEOS ) );
+
+    g2 = QgsGeometry::fromWkt( "LineStringZ( 1.0 2.0 3.0, 10.0 20.0 3.0 )" );
+    QVERIFY( !g2.isExactlyEqual( g1, Qgis::GeometryBackend::QGIS ) );
+    QVERIFY( !g1.isExactlyEqual( g2, Qgis::GeometryBackend::QGIS ) );
+    // check passes because GEOS works only on 2D components
+    QVERIFY( g2.isExactlyEqual( g1, Qgis::GeometryBackend::GEOS ) );
+    QVERIFY( g1.isExactlyEqual( g2, Qgis::GeometryBackend::GEOS ) );
+
+    // topologically equal
+    g2 = QgsGeometry::fromWkt( "MultiLineStringZ(( 1.0 2.0 3.0, 10.0 20.0 30.0 ))" );
+    QVERIFY( g2.isTopologicallyEqual( g1 ) );
+    QVERIFY( g1.isTopologicallyEqual( g2 ) );
+
+    // topologically equal - duplicated data
+    g2 = QgsGeometry::fromWkt( "MultiLineStringZ(( 1.0 2.0 3.0, 10.0 20.0 30.0 ), ( 1.0 2.0 3.0, 10.0 20.0 30.0 ))" );
+    QVERIFY( g2.isTopologicallyEqual( g1 ) );
+    QVERIFY( g1.isTopologicallyEqual( g2 ) );
+
+    // topologically equal - different direction
+    g2 = QgsGeometry::fromWkt( "MultiLineStringZ(( 10.0 20.0 30.0, 1.0 2.0 3.0 ))" );
+    QVERIFY( g2.isTopologicallyEqual( g1 ) );
+    QVERIFY( g1.isTopologicallyEqual( g2 ) );
+
+    // topologically equal - bad Z
+    g2 = QgsGeometry::fromWkt( "MultiLineStringZ(( 1.0 2.0 3.0, 10.0 20.0 -1.0 ))" );
+    // check passes because GEOS works only on 2D components
+    QVERIFY( g2.isTopologicallyEqual( g1 ) );
+    QVERIFY( g1.isTopologicallyEqual( g2 ) );
+
+    // topologically equal - not the same at all
+    g2 = QgsGeometry::fromWkt( "MultiLineStringZ(( 1.0 2.0 3.0, 10.0 20.0 30.0 ), ( -1.0 2.0 3.0, 10.0 20.0 30.0 ))" );
+    QVERIFY( !g2.isTopologicallyEqual( g1 ) );
+    QVERIFY( !g1.isTopologicallyEqual( g2 ) );
+
+    // fuzzy equal - good Z
+    g2 = QgsGeometry::fromWkt( "LineStringZ( 1.5 2.5 3.5, 10.5 20.5 30.5 )" );
+    QVERIFY( g2.isFuzzyEqual( g1, 0.50, Qgis::GeometryBackend::QGIS ) );
+    QVERIFY( g1.isFuzzyEqual( g2, 0.50, Qgis::GeometryBackend::QGIS ) );
+    QVERIFY( g2.isFuzzyEqual( g1, 0.71, Qgis::GeometryBackend::GEOS ) );
+    QVERIFY( g1.isFuzzyEqual( g2, 0.71, Qgis::GeometryBackend::GEOS ) );
+
+    // fuzzy equal - below threshold
+    QVERIFY( !g2.isFuzzyEqual( g1, 0.49, Qgis::GeometryBackend::QGIS ) );
+    QVERIFY( !g2.isFuzzyEqual( g1, 0.70, Qgis::GeometryBackend::GEOS ) );
+
+    // fuzzy equal - bad Z
+    g2 = QgsGeometry::fromWkt( "LineStringZ( 1.5 2.5 3.5, 10.5 20.5 -1.0 )" );
+    // QGIS fails as expected
+    QVERIFY( !g2.isFuzzyEqual( g1, 0.50, Qgis::GeometryBackend::QGIS ) );
+    QVERIFY( !g1.isFuzzyEqual( g2, 0.50, Qgis::GeometryBackend::QGIS ) );
+    // check passes because GEOS works only on 2D components
+    QVERIFY( g2.isFuzzyEqual( g1, 0.71, Qgis::GeometryBackend::GEOS ) );
+    QVERIFY( g1.isFuzzyEqual( g2, 0.71, Qgis::GeometryBackend::GEOS ) );
+
+    // fuzzy equal - below threshold
+    QVERIFY( !g2.isFuzzyEqual( g1, 0.70, Qgis::GeometryBackend::GEOS ) );
+
+    // ============ 3D+M
+    g1 = QgsGeometry::fromWkt( "LineStringZM( 1.0 2.0 3.0 4.0, 10.0 20.0 30.0 40.0)" );
+
+    // equal geometry, but different internal data
+    g2 = QgsGeometry::fromWkt( "LineStringZM( 1.0 2.0 3.0 4.0, 10.0 20.0 30.0 40.0 )" );
+    QVERIFY( g2.isExactlyEqual( g1, Qgis::GeometryBackend::QGIS ) );
+    QVERIFY( g1.isExactlyEqual( g2, Qgis::GeometryBackend::QGIS ) );
+    QVERIFY( g2.isExactlyEqual( g1, Qgis::GeometryBackend::GEOS ) );
+    QVERIFY( g1.isExactlyEqual( g2, Qgis::GeometryBackend::GEOS ) );
+
+    g2 = QgsGeometry::fromWkt( "LineStringZM( 1.0 2.0 3.0 4.0, 10.0 20.0 30.0 -1.0 )" );
+    QVERIFY( !g2.isExactlyEqual( g1, Qgis::GeometryBackend::QGIS ) );
+    QVERIFY( !g1.isExactlyEqual( g2, Qgis::GeometryBackend::QGIS ) );
+    // check passes because GEOS works only on 2D components
+    QVERIFY( g2.isExactlyEqual( g1, Qgis::GeometryBackend::GEOS ) );
+    QVERIFY( g1.isExactlyEqual( g2, Qgis::GeometryBackend::GEOS ) );
+
+    // topologically equal
+    g2 = QgsGeometry::fromWkt( "MultiLineStringZM(( 1.0 2.0 3.0 4.0, 10.0 20.0 30.0 40.0 ))" );
+    QVERIFY( g2.isTopologicallyEqual( g1 ) );
+    QVERIFY( g1.isTopologicallyEqual( g2 ) );
+
+    // topologically equal - duplicated data
+    g2 = QgsGeometry::fromWkt( "MultiLineStringZM(( 1.0 2.0 3.0 4.0, 10.0 20.0 30.0 40.0 ), ( 1.0 2.0 3.0 4.0, 10.0 20.0 30.0 40.0 ))" );
+    QVERIFY( g2.isTopologicallyEqual( g1 ) );
+    QVERIFY( g1.isTopologicallyEqual( g2 ) );
+
+    // topologically equal - different direction
+    g2 = QgsGeometry::fromWkt( "MultiLineStringZM(( 10.0 20.0 30.0 40.0, 1.0 2.0 3.0 4.0 ))" );
+    QVERIFY( g2.isTopologicallyEqual( g1 ) );
+    QVERIFY( g1.isTopologicallyEqual( g2 ) );
+
+    // topologically equal - bad M
+    g2 = QgsGeometry::fromWkt( "MultiLineStringZM(( 1.0 2.0 3.0 4.0, 10.0 20.0 30.0 -1.0 ))" );
+    // check passes because GEOS works only on 2D components
+    QVERIFY( g2.isTopologicallyEqual( g1 ) );
+    QVERIFY( g1.isTopologicallyEqual( g2 ) );
+
+    // topologically equal - not the same at all
+    g2 = QgsGeometry::fromWkt( "MultiLineStringZM(( 1.0 2.0 3.0 4.0, 10.0 20.0 30.0 40.0 ), ( -1.0 2.0 3.0 4.0, 10.0 20.0 30.0 40.0 ))" );
+    QVERIFY( !g2.isTopologicallyEqual( g1 ) );
+    QVERIFY( !g1.isTopologicallyEqual( g2 ) );
+
+    // fuzzy equal - good M
+    g2 = QgsGeometry::fromWkt( "LineStringZM( 1.5 2.5 3.5 4.5, 10.5 20.5 30.5 40.5 )" );
+    QVERIFY( g2.isFuzzyEqual( g1, 0.50, Qgis::GeometryBackend::QGIS ) );
+    QVERIFY( g1.isFuzzyEqual( g2, 0.50, Qgis::GeometryBackend::QGIS ) );
+    QVERIFY( g2.isFuzzyEqual( g1, 0.71, Qgis::GeometryBackend::GEOS ) );
+    QVERIFY( g1.isFuzzyEqual( g2, 0.71, Qgis::GeometryBackend::GEOS ) );
+
+    // fuzzy equal - below threshold
+    QVERIFY( !g2.isFuzzyEqual( g1, 0.49, Qgis::GeometryBackend::QGIS ) );
+    QVERIFY( !g2.isFuzzyEqual( g1, 0.70, Qgis::GeometryBackend::GEOS ) );
+
+    // fuzzy equal - bad M
+    g2 = QgsGeometry::fromWkt( "LineStringZM( 1.5 2.5 3.5 4.5, 10.5 20.5 30.5 -1.0 )" );
+    // QGIS fails as expected
+    QVERIFY( !g2.isFuzzyEqual( g1, 0.50, Qgis::GeometryBackend::QGIS ) );
+    QVERIFY( !g1.isFuzzyEqual( g2, 0.50, Qgis::GeometryBackend::QGIS ) );
+    // check passes because GEOS works only on 2D components
+    QVERIFY( g2.isFuzzyEqual( g1, 0.71, Qgis::GeometryBackend::GEOS ) );
+    QVERIFY( g1.isFuzzyEqual( g2, 0.71, Qgis::GeometryBackend::GEOS ) );
+
+    // fuzzy equal - below threshold
+    QVERIFY( !g2.isFuzzyEqual( g1, 0.70, Qgis::GeometryBackend::GEOS ) );
+  }
 }
 
 void TestQgsGeometry::vertexIterator()
@@ -601,32 +815,6 @@ void TestQgsGeometry::partIterator()
   QCOMPARE( geom.asWkt(), u"Point (1 2)"_s );
 
   // See test_qgsgeometry.py for geometry-type specific checks!
-}
-
-void TestQgsGeometry::geos()
-{
-  // test GEOS conversion utils
-
-  // empty parts should NOT be added to a GEOS collection -- it can cause crashes in GEOS
-  QgsMultiPolygon polyWithEmptyParts;
-  geos::unique_ptr asGeos( QgsGeos::asGeos( &polyWithEmptyParts ) );
-  QgsGeometry res( QgsGeos::fromGeos( asGeos.get() ) );
-  QCOMPARE( res.asWkt(), u"MultiPolygon EMPTY"_s );
-  polyWithEmptyParts.addGeometry( new QgsPolygon( new QgsLineString() ) );
-  polyWithEmptyParts.addGeometry( new QgsPolygon( new QgsLineString( QVector<QgsPoint>() << QgsPoint( 0, 0 ) << QgsPoint( 0, 1 ) << QgsPoint( 1, 1 ) << QgsPoint( 0, 0 ) ) ) );
-  polyWithEmptyParts.addGeometry( new QgsPolygon( new QgsLineString() ) );
-  polyWithEmptyParts.addGeometry( new QgsPolygon( new QgsLineString( QVector<QgsPoint>() << QgsPoint( 10, 0 ) << QgsPoint( 10, 1 ) << QgsPoint( 11, 1 ) << QgsPoint( 10, 0 ) ) ) );
-  asGeos = QgsGeos::asGeos( &polyWithEmptyParts );
-  QCOMPARE( GEOSGetNumGeometries_r( QgsGeosContext::get(), asGeos.get() ), 2 );
-  res = QgsGeometry( QgsGeos::fromGeos( asGeos.get() ) );
-  QCOMPARE( res.asWkt(), u"MultiPolygon (((0 0, 0 1, 1 1, 0 0)),((10 0, 10 1, 11 1, 10 0)))"_s );
-
-  // Empty geometry
-  QgsPoint point;
-  asGeos = QgsGeos::asGeos( &point );
-  // should be treated as a null geometry, not an empty point in order to maintain api compatibility with
-  // earlier QGIS 3.x releases
-  QVERIFY( !QgsGeos::fromGeos( asGeos.get() ) );
 }
 
 void TestQgsGeometry::curveIndexOf_data()
@@ -2549,7 +2737,15 @@ void TestQgsGeometry::splitGeometry()
   QgsGeometry g1 = QgsGeometry::fromWkt(
     u"Polygon ((492980.38648063864093274 7082334.45244149677455425, 493082.65415841294452548 7082319.87918917648494244, 492980.38648063858272508 7082334.45244149677455425, 492980.38648063864093274 7082334.45244149677455425))"_s
   );
-  QCOMPARE( g1.splitGeometry( QgsPointSequence() << QgsPoint( 493825.46541286131832749, 7082214.02779923938214779 ) << QgsPoint( 492955.04876351181883365, 7082338.06309300474822521 ), newGeoms, false, testPoints ), Qgis::GeometryOperationResult::InvalidBaseGeometry );
+#if GEOS_VERSION_MAJOR > 3 || ( GEOS_VERSION_MAJOR == 3 && GEOS_VERSION_MINOR >= 15 )
+  // This test was added back in the days for checking that a crash was no longer present.
+  // Now, GEOS 3.15's geometry splitter returns an engine error ("Splitting polygonal geometry failed to preserve area").
+  // Note that the base geometry is and has always been valid.
+  Qgis::GeometryOperationResult result = Qgis::GeometryOperationResult::GeometryEngineError;
+#else
+  Qgis::GeometryOperationResult result = Qgis::GeometryOperationResult::InvalidBaseGeometry;
+#endif
+  QCOMPARE( g1.splitGeometry( QgsPointSequence() << QgsPoint( 493825.46541286131832749, 7082214.02779923938214779 ) << QgsPoint( 492955.04876351181883365, 7082338.06309300474822521 ), newGeoms, false, testPoints ), result );
   QVERIFY( newGeoms.isEmpty() );
 
   // Bug https://github.com/qgis/QGIS/issues/33489
@@ -2695,11 +2891,20 @@ void TestQgsGeometry::splitGeometry()
 
   // Should not crash - https://github.com/qgis/QGIS/issues/50948
   g2 = QgsGeometry::fromWkt( "LineString ( -63294.10966012725839391 -79156.27234554117603693, -63290.25259721937618451 -79162.78533450335089583, -63290.25259721936890855 -79162.78533450335089583)" );
+  QString g2WktBefore = g2.asWkt( 17 );
   testPoints.clear();
   newGeoms.clear();
   QCOMPARE( g2.splitGeometry( QgsPointSequence() << QgsPoint( -63290.25259721936890855, -79165.28533450335089583 ) << QgsPoint( -63290.25259721936890855, -79160.28533450335089583 ), newGeoms, false, testPoints ), Qgis::GeometryOperationResult::Success );
+#if GEOS_VERSION_MAJOR > 3 || ( GEOS_VERSION_MAJOR == 3 && GEOS_VERSION_MINOR >= 15 )
+  // The blade should not really cut the line, since the line's endpoint lies on the blade.
+  QCOMPARE( newGeoms.count(), 0 );
+  // Since split returned success and splitFeature param was implicitly true, the base geom was supposed to be split.
+  // Check that the resulting (split) geometry still matches the original one.
+  QCOMPARE( g2.asWkt( 17 ), g2WktBefore );
+#else
   QCOMPARE( newGeoms.count(), 1 );
   QCOMPARE( newGeoms[0].asWkt( 17 ), u"LineString (-63290.25259721937618451 -79162.78533450335089583, -63290.25259721936890855 -79162.78533450335089583)"_s );
+#endif
 
   // Should not split the first part - https://github.com/qgis/QGIS/issues/54155
   g2 = QgsGeometry::fromWkt( "MultiLinestring((0 1, 1 0),(0 2, 2 0))" );
@@ -2707,9 +2912,119 @@ void TestQgsGeometry::splitGeometry()
   newGeoms.clear();
   QCOMPARE( g2.splitGeometry( QgsPointSequence() << QgsPoint( 0.8, 0.8 ) << QgsPoint( 1.2, 1.2 ), newGeoms, false, testPoints, false ), Qgis::GeometryOperationResult::Success );
   QCOMPARE( newGeoms.count(), 3 );
+#if GEOS_VERSION_MAJOR > 3 || ( GEOS_VERSION_MAJOR == 3 && GEOS_VERSION_MINOR >= 15 )
+  QStringList newGeomWkts;
+  newGeomWkts << newGeoms[0].asWkt( 0 ) << newGeoms[1].asWkt( 0 ) << newGeoms[2].asWkt( 0 );
+
+  // GEOS 3.15 returns single-part geometries (at least for now)
+  QVERIFY( newGeomWkts.contains( u"LineString (0 2, 1 1)"_s ) );
+  QVERIFY( newGeomWkts.contains( u"LineString (1 1, 2 0)"_s ) );
+  QVERIFY( newGeomWkts.contains( u"LineString (0 1, 1 0)"_s ) );
+#else
   QCOMPARE( newGeoms[0].asWkt( 0 ), u"MultiLineString ((0 2, 1 1))"_s );
   QCOMPARE( newGeoms[1].asWkt( 0 ), u"MultiLineString ((1 1, 2 0))"_s );
   QCOMPARE( newGeoms[2].asWkt( 0 ), u"MultiLineString ((0 1, 1 0))"_s );
+#endif
+
+  // Split point with no Z should not affect the Z of new geoms
+  g2 = QgsGeometry::fromWkt( "LineString Z (0 0 0, 10 10 10)" );
+  testPoints.clear();
+  newGeoms.clear();
+  QCOMPARE( g2.splitGeometry( QgsPointSequence() << QgsPoint( 2, 2 ), newGeoms, false, testPoints, false ), Qgis::GeometryOperationResult::Success );
+  QCOMPARE( newGeoms.count(), 2 );
+  QCOMPARE( newGeoms[0].asWkt( 0 ), u"LineString Z (0 0 0, 2 2 2)"_s );
+  QCOMPARE( newGeoms[1].asWkt( 0 ), u"LineString Z (2 2 2, 10 10 10)"_s );
+
+  // Split point Z should not propagate to new geoms
+  g2 = QgsGeometry::fromWkt( "LineString Z (0 0 0, 10 10 10)" );
+  testPoints.clear();
+  newGeoms.clear();
+  QCOMPARE( g2.splitGeometry( QgsPointSequence() << QgsPoint( 2, 2, 42 ), newGeoms, false, testPoints, false ), Qgis::GeometryOperationResult::Success );
+  QCOMPARE( newGeoms.count(), 2 );
+  QCOMPARE( newGeoms[0].asWkt( 0 ), u"LineString Z (0 0 0, 2 2 2)"_s );
+  QCOMPARE( newGeoms[1].asWkt( 0 ), u"LineString Z (2 2 2, 10 10 10)"_s );
+
+  // Split point Z should not affect a 2d geometry
+  g2 = QgsGeometry::fromWkt( "LineString (0 0, 10 10)" );
+  testPoints.clear();
+  newGeoms.clear();
+  QCOMPARE( g2.splitGeometry( QgsPointSequence() << QgsPoint( 2, 2, 42 ), newGeoms, false, testPoints, false ), Qgis::GeometryOperationResult::Success );
+  QCOMPARE( newGeoms.count(), 2 );
+  QCOMPARE( newGeoms[0].asWkt( 0 ), u"LineString (0 0, 2 2)"_s );
+  QCOMPARE( newGeoms[1].asWkt( 0 ), u"LineString (2 2, 10 10)"_s );
+
+  // Splitting 3d polygon with 2d line should interpolate Z values
+  g2 = QgsGeometry::fromWkt( "PolygonZ ((0 5 10, 0 10 20, 10 10 30, 10 5 20, 0 5 10))" );
+  testPoints.clear();
+  newGeoms.clear();
+  QCOMPARE( g2.splitGeometry( QgsPointSequence() << QgsPoint( 1, 11 ) << QgsPoint( 1, 5 ), newGeoms, false, testPoints, false ), Qgis::GeometryOperationResult::Success );
+  QCOMPARE( newGeoms.count(), 2 );
+  QgsGeometry geom = newGeoms[0];
+  geom.normalize();
+  QCOMPARE( geom.asWkt( 0 ), u"Polygon Z ((0 5 10, 0 10 20, 1 10 21, 1 5 11, 0 5 10))"_s );
+  geom = newGeoms[1];
+  geom.normalize();
+  QCOMPARE( geom.asWkt( 0 ), u"Polygon Z ((1 5 11, 1 10 21, 10 10 30, 10 5 20, 1 5 11))"_s );
+
+  // Splitting 3d polygon with 3d line should interpolate Z values from geometry and ignore ones from split line
+  g2 = QgsGeometry::fromWkt( "PolygonZ ((0 5 10, 0 10 20, 10 10 30, 10 5 20, 0 5 10))" );
+  testPoints.clear();
+  newGeoms.clear();
+  QCOMPARE( g2.splitGeometry( QgsPointSequence() << QgsPoint( 1, 11, 42 ) << QgsPoint( 1, 5, 42 ), newGeoms, false, testPoints, false ), Qgis::GeometryOperationResult::Success );
+  QCOMPARE( newGeoms.count(), 2 );
+  geom = newGeoms[0];
+  geom.normalize();
+  QCOMPARE( geom.asWkt( 0 ), u"Polygon Z ((0 5 10, 0 10 20, 1 10 21, 1 5 11, 0 5 10))"_s );
+  geom = newGeoms[1];
+  geom.normalize();
+  QCOMPARE( geom.asWkt( 0 ), u"Polygon Z ((1 5 11, 1 10 21, 10 10 30, 10 5 20, 1 5 11))"_s );
+}
+
+void TestQgsGeometry::splitGeometryByCurve()
+{
+  QVector<QgsGeometry> newGeoms;
+  QgsPointSequence testPoints;
+  QgsGeometry geom;
+  QgsGeometry g2;
+
+#if GEOS_VERSION_MAJOR > 3 || ( GEOS_VERSION_MAJOR == 3 && GEOS_VERSION_MINOR >= 15 )
+  // Splitting 2d polygon with 2d circular string should return curved geometries
+  g2 = QgsGeometry::fromWkt( "Polygon ((0 5, 0 10, 10 10, 10 5, 0 5))" );
+  testPoints.clear();
+  newGeoms.clear();
+  QCOMPARE( g2.splitGeometry( new QgsCircularString( QgsPoint( 1, 10 ), QgsPoint( 3, 7 ), QgsPoint( 1, 5 ) ), newGeoms, false, false, testPoints, false ), Qgis::GeometryOperationResult::Success );
+  QCOMPARE( newGeoms.count(), 2 );
+  geom = newGeoms[0];
+  QCOMPARE( geom.asWkt(), u"CurvePolygon (CompoundCurve ((0 5, 0 10, 1 10),CircularString (1 10, 3 7, 1 5),(1 5, 0 5)))"_s );
+  geom = newGeoms[1];
+  QCOMPARE( geom.asWkt(), u"CurvePolygon (CompoundCurve ((1 10, 10 10, 10 5, 1 5),CircularString (1 5, 3 7, 1 10)))"_s );
+#endif
+
+  // Splitting 3d polygon with 2d line should interpolate Z values
+  g2 = QgsGeometry::fromWkt( "PolygonZ ((0 5 10, 0 10 20, 10 10 30, 10 5 20, 0 5 10))" );
+  testPoints.clear();
+  newGeoms.clear();
+  QCOMPARE( g2.splitGeometry( new QgsLineString( QgsPoint( 1, 11 ), QgsPoint( 1, 5 ) ), newGeoms, false, false, testPoints, false ), Qgis::GeometryOperationResult::Success );
+  QCOMPARE( newGeoms.count(), 2 );
+  geom = newGeoms[0];
+  geom.normalize();
+  QCOMPARE( geom.asWkt( 0 ), u"Polygon Z ((0 5 10, 0 10 20, 1 10 21, 1 5 11, 0 5 10))"_s );
+  geom = newGeoms[1];
+  geom.normalize();
+  QCOMPARE( geom.asWkt( 0 ), u"Polygon Z ((1 5 11, 1 10 21, 10 10 30, 10 5 20, 1 5 11))"_s );
+
+  // Splitting 3d polygon with 3d line should interpolate Z values from geometry and ignore ones from split line
+  g2 = QgsGeometry::fromWkt( "PolygonZ ((0 5 10, 0 10 20, 10 10 30, 10 5 20, 0 5 10))" );
+  testPoints.clear();
+  newGeoms.clear();
+  QCOMPARE( g2.splitGeometry( new QgsLineString( QgsPoint( 1, 11, 42 ), QgsPoint( 1, 5, 42 ) ), newGeoms, false, false, testPoints, false ), Qgis::GeometryOperationResult::Success );
+  QCOMPARE( newGeoms.count(), 2 );
+  geom = newGeoms[0];
+  geom.normalize();
+  QCOMPARE( geom.asWkt( 0 ), u"Polygon Z ((0 5 10, 0 10 20, 1 10 21, 1 5 11, 0 5 10))"_s );
+  geom = newGeoms[1];
+  geom.normalize();
+  QCOMPARE( geom.asWkt( 0 ), u"Polygon Z ((1 5 11, 1 10 21, 10 10 30, 10 5 20, 1 5 11))"_s );
 }
 
 void TestQgsGeometry::snappedToGrid()
@@ -3263,6 +3578,8 @@ void TestQgsGeometry::wktParser()
   QCOMPARE( mc.asWkt(), u"MultiCurve (CircularString (0 0, 1 1, 2 2))"_s );
   QVERIFY( mc.fromWkt( "MultiCurve(CIRCULARSTRING( 0 0, 1 1, 2 2), LINESTRING((2 2, 3 3)))" ) );
   QCOMPARE( mc.asWkt(), u"MultiCurve (CircularString (0 0, 1 1, 2 2),LineString (2 2, 3 3))"_s );
+  QVERIFY( mc.fromWkt( "MultiCurve(CIRCULARSTRING( 0 0, 1 1, 2 2), LINESTRING((2 2, 3 3)), COMPOUNDCURVE(CIRCULARSTRING(0 0, 1 1, 2 0)))" ) );
+  QCOMPARE( mc.asWkt(), u"MultiCurve (CircularString (0 0, 1 1, 2 2),LineString (2 2, 3 3),CompoundCurve (CircularString (0 0, 1 1, 2 0)))"_s );
   QVERIFY( mc.fromWkt( "MultiCurve ( )" ) );
   QCOMPARE( mc.asWkt(), u"MultiCurve EMPTY"_s );
   QVERIFY( mc.fromWkt( "MultiCurve EMPTY" ) );

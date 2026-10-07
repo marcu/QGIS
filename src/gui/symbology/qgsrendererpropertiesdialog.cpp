@@ -184,9 +184,7 @@ void QgsRendererPropertiesDialog::connectValueChanged( const QList<QWidget *> &w
 }
 
 QgsRendererPropertiesDialog::~QgsRendererPropertiesDialog()
-{
-  delete mPaintEffect;
-}
+{}
 
 void QgsRendererPropertiesDialog::setMapCanvas( QgsMapCanvas *canvas )
 {
@@ -272,7 +270,7 @@ void QgsRendererPropertiesDialog::rendererChanged()
       changeOrderBy( mActiveWidget->renderer()->orderBy(), mActiveWidget->renderer()->orderByEnabled() );
       connect( mActiveWidget, &QgsRendererWidget::layerVariablesChanged, this, &QgsRendererPropertiesDialog::layerVariablesChanged );
     }
-    connect( mActiveWidget, &QgsPanelWidget::widgetChanged, this, &QgsRendererPropertiesDialog::widgetChanged );
+    connect( mActiveWidget, &QgsPanelWidget::changed, this, &QgsRendererPropertiesDialog::widgetChanged );
     connect( mActiveWidget, &QgsPanelWidget::showPanel, this, &QgsRendererPropertiesDialog::openPanel );
     w->setDockMode( mDockMode );
   }
@@ -361,8 +359,8 @@ void QgsRendererPropertiesDialog::syncToLayer()
   {
     if ( mLayer->renderer()->paintEffect() )
     {
-      mPaintEffect = mLayer->renderer()->paintEffect()->clone();
-      mEffectWidget->setPaintEffect( mPaintEffect );
+      mPaintEffect.reset( mLayer->renderer()->paintEffect()->clone() );
+      mEffectWidget->setPaintEffect( mPaintEffect.get() );
     }
 
     mOrderBy = mLayer->renderer()->orderBy();

@@ -74,6 +74,8 @@ class CORE_EXPORT QgsLayerTreeGroup : public QgsLayerTreeNode
      */
     void setName( const QString &n ) override;
 
+    QString id() const override { return mId; }
+
     /**
      * Insert a new group node with given name at specified position. The newly created node is owned by this group.
      */
@@ -382,8 +384,9 @@ class CORE_EXPORT QgsLayerTreeGroup : public QgsLayerTreeNode
      *
      * \see hasWmsTimeDimension()
      * \since QGIS 3.44
+     * \deprecated QGIS 4.4. Use serverProperties() to access TIME dimension instead.
      */
-    void setHasWmsTimeDimension( const bool hasWmsTimeDimension );
+    Q_DECL_DEPRECATED void setHasWmsTimeDimension( const bool hasWmsTimeDimension ) SIP_DEPRECATED;
 
     /**
      * Returns whether the WMS time dimension should be computed for this group or not.
@@ -395,6 +398,29 @@ class CORE_EXPORT QgsLayerTreeGroup : public QgsLayerTreeNode
      * \since QGIS 3.44
      */
     bool hasWmsTimeDimension() const;
+
+    /**
+     * Returns the request mode of the group.
+     * When it's opaque, WMS treats it as a single opaque layer instead
+     * of a collection of individual layers.
+     * Its child layers are hidden from GetCapabilities requests.
+     * Any direct requests (like GetMap or GetFeatureInfo etc.) for a child layer will result in an error.
+     * Child layers are rendered whenever a request is made for the group itself.
+     *
+     * \see setWmsGroupRequestMode()
+     * \since QGIS 4.2
+     */
+    Qgis::WmsGroupRequestMode wmsGroupRequestMode() const;
+
+    /**
+     * Sets the request mode of the group.
+     * \param groupRequestMode On Opaque, WMS treats it as a single opaque layer instead
+     * of a collection of individual layers. On Normal it behaves as a standard group.
+     *
+     * \see wmsGroupRequestMode()
+     * \since QGIS 4.2
+     */
+    void setWmsGroupRequestMode( Qgis::WmsGroupRequestMode groupRequestMode );
 
   protected slots:
 
@@ -408,6 +434,8 @@ class CORE_EXPORT QgsLayerTreeGroup : public QgsLayerTreeNode
 
     QString mName;
 
+    QString mId;
+
     bool mChangingChildVisibility = false;
 
     //! Whether the group is mutually exclusive (i.e. only one child can be checked at a time)
@@ -418,8 +446,6 @@ class CORE_EXPORT QgsLayerTreeGroup : public QgsLayerTreeNode
      * (so if the whole group is unchecked and checked again, we know which child to check)
      */
     int mMutuallyExclusiveChildIndex = -1;
-
-    bool mWmsHasTimeDimension = false;
 
     //! Sets parent to NULLPTR and disconnects all external and forwarded signals
     void makeOrphan() override SIP_SKIP;
@@ -434,6 +460,10 @@ class CORE_EXPORT QgsLayerTreeGroup : public QgsLayerTreeNode
 #endif
 
     QgsLayerTreeGroup &operator=( const QgsLayerTreeGroup & ) = delete;
+
+    // only QgsLayerTreeUtils::regenerateGroupIds may assign a new id
+    friend class QgsLayerTreeUtils;
+    void setId( const QString &id );
 
     /**
      * Helper method to migrate project before 3.44 where shortName, title and abstract were
@@ -453,6 +483,8 @@ class CORE_EXPORT QgsLayerTreeGroup : public QgsLayerTreeNode
      * Stores information about server properties
      */
     std::unique_ptr< QgsMapLayerServerProperties > mServerProperties;
+
+    Qgis::WmsGroupRequestMode mWmsGroupRequestMode = Qgis::WmsGroupRequestMode::Normal;
 };
 
 

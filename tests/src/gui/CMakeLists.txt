@@ -30,6 +30,7 @@ set(TESTS
   testqgscategorizedrendererwidget.cpp
   testqgsdatumtransformdialog.cpp
   testqgsdiagramproperties.cpp
+  testqgsdockablewidgethelper.cpp
   testqgsdoublespinbox.cpp
   testqgsdualview.cpp
   testqgsattributeform.cpp
@@ -48,8 +49,10 @@ set(TESTS
   testprojectionissues.cpp
   testqgsgui.cpp
   testqgsgdalguiutils.cpp
+  testqgsprocessingmodelgui.cpp
   testprocessinggui.cpp
   testqgsprocessingmodel.cpp
+  testqgssymbollayermodel.cpp
   testqgsrubberband.cpp
   testqgsscalecombobox.cpp
   testqgsscalerangewidget.cpp
@@ -63,6 +66,7 @@ set(TESTS
   testqgslayoutgui.cpp
   testqgslayoutview.cpp
   testqgsmaptooleditblanksegments.cpp
+  testqgsmaptoolextraitem.cpp
   testqgsvaluemapwidgetwrapper.cpp
   testqgsvaluemapconfigdlg.cpp
   testqgsvaluerelationwidgetwrapper.cpp

@@ -34,7 +34,8 @@ using namespace Qt::StringLiterals;
 #ifdef HAVE_OPENCL
 #ifdef QGISDEBUG
 #include <chrono>
-#include "qgssettings.h"
+#include "qgsmaprendererjob.h"
+#include "qgssettingsentryimpl.h"
 #endif
 #include "qgsexception.h"
 #include "qgsopenclutils.h"
@@ -62,7 +63,7 @@ Qgis::RasterRendererFlags QgsHillshadeRenderer::flags() const
   return Qgis::RasterRendererFlag::InternalLayerOpacityHandling;
 }
 
-QgsRasterRenderer *QgsHillshadeRenderer::create( const QDomElement &elem, QgsRasterInterface *input )
+std::unique_ptr<QgsRasterRenderer> QgsHillshadeRenderer::create( const QDomElement &elem, QgsRasterInterface *input )
 {
   if ( elem.isNull() )
   {
@@ -74,7 +75,7 @@ QgsRasterRenderer *QgsHillshadeRenderer::create( const QDomElement &elem, QgsRas
   double angle = elem.attribute( u"angle"_s, u"45"_s ).toDouble();
   double zFactor = elem.attribute( u"zfactor"_s, u"1"_s ).toDouble();
   bool multiDirectional = elem.attribute( u"multidirection"_s, u"0"_s ).toInt();
-  QgsHillshadeRenderer *r = new QgsHillshadeRenderer( input, band, azimuth, angle );
+  auto r = std::make_unique<QgsHillshadeRenderer>( input, band, azimuth, angle );
   r->readXml( elem );
 
   r->setZFactor( zFactor );
@@ -513,7 +514,7 @@ QgsRasterBlock *QgsHillshadeRenderer::block( int bandNo, const QgsRectangle &ext
   } // End of switch in case OpenCL is not available or enabled
 
 #ifdef QGISDEBUG
-  if ( QgsSettings().value( u"Map/logCanvasRefreshEvent"_s, false ).toBool() )
+  if ( QgsMapRendererJob::settingsLogCanvasRefreshEvent->value() )
   {
     QgsMessageLog::logMessage(
       u"%1 processing time for hillshade (%2 x %3 ): %4 ms"_s.arg( useOpenCL ? u"OpenCL"_s : u"CPU"_s )

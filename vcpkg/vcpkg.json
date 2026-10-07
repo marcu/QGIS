@@ -2,13 +2,13 @@
   "vcpkg-configuration": {
     "default-registry": {
       "kind": "git",
-      "baseline": "5d57f5a0a5469a23e005fc79a7c1814ab4fc967e",
+      "baseline": "b3ae22aef2b857af6e80d756c13f15db12be4e8a",
       "repository": "https://github.com/microsoft/vcpkg"
     },
     "registries": [
       {
         "kind": "git",
-        "baseline": "a3f181f299a54a0d67e6e60cac746ea265adfb29",
+        "baseline": "39b3b9007ac463a36375859943b0771737c5803b",
         "repository": "https://github.com/open-vcpkg/python-registry",
         "packages": [
           "arrow",
@@ -39,12 +39,19 @@
       "name": "gdal",
       "default-features": false,
       "features": [
-        "freexl"
+        "freexl",
+        "zstd"
       ]
     },
     "geos",
     "gsl",
     "jhasse-poly2tri",
+    {
+      "name": "libjpeg-turbo",
+      "features": [
+        "jpeg8"
+      ]
+    },
     "libspatialindex",
     {
       "name": "libtasn1",
@@ -82,12 +89,32 @@
     {
       "name": "qtbase",
       "default-features": false,
-      "host": true
+      "host": true,
+      "features": [
+        "thread"
+      ]
+    },
+    {
+      "name": "qtmultimedia",
+      "default-features": false,
+      "platform": "emscripten"
+    },
+    {
+      "name": "qtmultimedia",
+      "platform": "!emscripten"
     },
     "qtsvg",
-    "qtmultimedia",
     "qt5compat",
     "qtkeychain-qt6",
+    {
+      "name": "tiff",
+      "features": [
+        "lerc",
+        "libdeflate",
+        "webp",
+        "zstd"
+      ]
+    },
     "zlib",
     "zstd"
   ],
@@ -162,6 +189,7 @@
         },
         "py-lxml",
         "py-markupsafe",
+        "py-matplotlib",
         "py-networkx",
         "py-numpy",
         "py-owslib",
@@ -185,6 +213,7 @@
           ]
         },
         "py-pysal",
+        "py-pysfcgal",
         "py-pytz",
         "py-pyyaml",
         "py-qscintilla",
@@ -210,6 +239,7 @@
           "name": "gdal",
           "default-features": true,
           "features": [
+            "archive",
             "arrow-adbc",
             "kea",
             "parquet",
@@ -232,7 +262,6 @@
           ]
         },
         "qtimageformats",
-        "qtquickcontrols2",
         "qttools",
         "qtpositioning"
       ]
@@ -252,8 +281,13 @@
       "description": "Determines whether QGIS gui should be built",
       "dependencies": [
         "qscintilla",
-        "qtmultimedia",
         "qwt"
+      ]
+    },
+    "hana": {
+      "description": "Build with SAP HANA Spatial support",
+      "dependencies": [
+        "odbccpp"
       ]
     },
     "opencl": {
@@ -296,6 +330,18 @@
       "description": "Build with SFCGAL support",
       "dependencies": [
         "sfcgal"
+      ]
+    },
+    "tracy": {
+      "description": "Add Tracy profiler client support",
+      "dependencies": [
+        {
+          "name": "tracy",
+          "features": [
+            "fibers",
+            "on-demand"
+          ]
+        }
       ]
     }
   }

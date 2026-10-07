@@ -38,14 +38,15 @@ bool QgsNullMaterialSettings::supportsTechnique( Qgis::MaterialRenderingTechniqu
     case Qgis::MaterialRenderingTechnique::TrianglesWithFixedTexture:
     case Qgis::MaterialRenderingTechnique::TrianglesDataDefined:
     case Qgis::MaterialRenderingTechnique::Lines:
+    case Qgis::MaterialRenderingTechnique::Billboards:
       return false;
   }
   return false;
 }
 
-QgsAbstractMaterialSettings *QgsNullMaterialSettings::create()
+std::unique_ptr<QgsAbstractMaterialSettings> QgsNullMaterialSettings::create()
 {
-  return new QgsNullMaterialSettings();
+  return std::make_unique<QgsNullMaterialSettings>();
 }
 
 QgsNullMaterialSettings *QgsNullMaterialSettings::clone() const
@@ -60,4 +61,14 @@ bool QgsNullMaterialSettings::equals( const QgsAbstractMaterialSettings *other )
     return false;
 
   return true;
+}
+
+QColor QgsNullMaterialSettings::averageColor() const
+{
+  return QColor();
+}
+
+void QgsNullMaterialSettings::setColorsFromBase( const QColor &baseColor )
+{
+  Q_UNUSED( baseColor )
 }

@@ -20,6 +20,7 @@
 #include "qgsstringutils.h"
 #include "qgsvariantutils.h"
 
+#include <QColor>
 #include <QDate>
 #include <QDateTime>
 #include <QRegularExpression>
@@ -103,6 +104,16 @@ QString QgsExpressionNode::NodeList::cleanNamedNodeName( const QString &name )
     cleaned = u"geometry2"_s;
   else if ( cleaned == "i"_L1 )
     cleaned = u"vertex"_s;
+  else if ( cleaned == "array_a"_L1 )
+    cleaned = u"array1"_s;
+  else if ( cleaned == "array_b"_L1 )
+    cleaned = u"array2"_s;
+  else if ( cleaned == "point_a"_L1 )
+    cleaned = u"point1"_s;
+  else if ( cleaned == "point_b"_L1 )
+    cleaned = u"point2"_s;
+  else if ( cleaned == "array_prioritize"_L1 )
+    cleaned = u"priority"_s;
 
   return cleaned;
 }
@@ -189,6 +200,23 @@ QgsExpressionNode *QgsExpressionNodeUnaryOperator::clone() const
   QgsExpressionNodeUnaryOperator *copy = new QgsExpressionNodeUnaryOperator( mOp, mOperand->clone() );
   cloneTo( copy );
   return copy;
+}
+
+QgsExpressionNode *QgsExpressionNodeUnaryOperator::simplifiedNode() const
+{
+  std::unique_ptr< QgsExpressionNode > simplifiedOperand( mOperand->simplifiedNode() );
+  if ( simplifiedOperand->nodeType() == ntLiteral )
+  {
+    QgsExpressionNodeUnaryOperator tempNode( mOp, simplifiedOperand->clone() );
+    QgsExpression parentExp;
+    QVariant result = tempNode.eval( &parentExp, nullptr );
+    if ( !parentExp.hasEvalError() )
+    {
+      return new QgsExpressionNodeLiteral( result );
+    }
+  }
+
+  return new QgsExpressionNodeUnaryOperator( mOp, simplifiedOperand.release() );
 }
 
 bool QgsExpressionNodeUnaryOperator::isStatic( QgsExpression *parent, const QgsExpressionContext *context ) const
@@ -471,6 +499,136 @@ QVariant QgsExpressionNodeBinaryOperator::evalNode( QgsExpression *parent, const
         QDateTime datetime2 = QgsExpressionUtils::getDateTimeValue( vR, parent );
         ENSURE_NO_EVAL_ERROR
         return QgsInterval( datetime1 - datetime2 );
+      }
+      else if ( ( mOp == boPlus || mOp == boMinus || mOp == boMul || mOp == boDiv ) && vL.userType() == QMetaType::Type::QColor && vR.userType() == QMetaType::Type::QColor )
+      {
+        bool isQColor = false;
+        const QColor colorL = QgsExpressionUtils::getColorValue( vL, parent, isQColor );
+        ENSURE_NO_EVAL_ERROR
+        const QColor colorR = QgsExpressionUtils::getColorValue( vR, parent, isQColor );
+        ENSURE_NO_EVAL_ERROR
+
+        if ( !colorL.isValid() || !colorR.isValid() )
+        {
+          parent->setEvalErrorString( tr( "Cannot perform operation on invalid color" ) );
+          return QVariant();
+        }
+
+        QColor::Spec colorLSpec = colorL.spec();
+        QColor::Spec colorRSpec = colorR.spec();
+
+        switch ( colorLSpec )
+        {
+          case QColor::Cmyk:
+          {
+            if ( colorRSpec != QColor::Cmyk )
+            {
+              parent->setEvalErrorString( tr( "Cannot combine a CMYK color with a non-CMYK color" ) );
+              return QVariant();
+            }
+
+            float lc, lm, ly, lk, la, rc, rm, ry, rk, ra;
+            colorL.getCmykF( &lc, &lm, &ly, &lk, &la );
+            colorR.getCmykF( &rc, &rm, &ry, &rk, &ra );
+            return QColor::fromCmykF(
+              static_cast<float>( std::clamp( computeDouble( lc, rc ), 0.0, 1.0 ) ),
+              static_cast<float>( std::clamp( computeDouble( lm, rm ), 0.0, 1.0 ) ),
+              static_cast<float>( std::clamp( computeDouble( ly, ry ), 0.0, 1.0 ) ),
+              static_cast<float>( std::clamp( computeDouble( lk, rk ), 0.0, 1.0 ) ),
+              la
+            );
+          }
+          case QColor::Hsl:
+          case QColor::Hsv:
+          case QColor::Rgb:
+          case QColor::ExtendedRgb:
+          {
+            if ( colorRSpec == QColor::Cmyk )
+            {
+              parent->setEvalErrorString( tr( "Cannot combine a non-CMYK color with a CMYK color" ) );
+              return QVariant();
+            }
+
+            float lr, lg, lb, la, rr, rg, rb, ra;
+            colorL.getRgbF( &lr, &lg, &lb, &la );
+            colorR.getRgbF( &rr, &rg, &rb, &ra );
+            QColor result = QColor::
+              fromRgbF( static_cast<float>( std::clamp( computeDouble( lr, rr ), 0.0, 1.0 ) ), static_cast<float>( std::clamp( computeDouble( lg, rg ), 0.0, 1.0 ) ), static_cast<float>( std::clamp( computeDouble( lb, rb ), 0.0, 1.0 ) ), la );
+            return result;
+          }
+          default:
+            return QVariant();
+        }
+      }
+      else if ( ( mOp == boPlus || mOp == boMinus || mOp == boMul || mOp == boDiv )
+                && ( ( ( vL.userType() == QMetaType::Type::QColor ) && QgsExpressionUtils::isDoubleSafe( vR ) ) || ( ( vR.userType() == QMetaType::Type::QColor ) && QgsExpressionUtils::isDoubleSafe( vL ) ) ) )
+      {
+        const bool colorLeft = vL.userType() == QMetaType::Type::QColor;
+        bool isQColor = false;
+        const QColor color = QgsExpressionUtils::getColorValue( colorLeft ? vL : vR, parent, isQColor );
+        ENSURE_NO_EVAL_ERROR
+
+        if ( !color.isValid() )
+        {
+          parent->setEvalErrorString( tr( "Cannot perform operation on invalid color" ) );
+          return QVariant();
+        }
+
+        const double value = QgsExpressionUtils::getDoubleValue( colorLeft ? vR : vL, parent );
+        ENSURE_NO_EVAL_ERROR
+
+        if ( mOp == boDiv && value == 0.0 )
+        {
+          return QVariant();
+        }
+
+        // let's not divide with color
+        if ( !colorLeft && mOp == boDiv )
+        {
+          parent->setEvalErrorString( tr( "Can't perform / with a color value on the right" ) );
+          return QVariant();
+        }
+
+        switch ( color.spec() )
+        {
+          case QColor::Cmyk:
+          {
+            float c, m, y, k, a;
+            color.getCmykF( &c, &m, &y, &k, &a );
+            const double dc = static_cast<double>( c );
+            const double dm = static_cast<double>( m );
+            const double dy = static_cast<double>( y );
+            const double dk = static_cast<double>( k );
+
+            return QColor::fromCmykF(
+              static_cast<float>( std::clamp( computeDouble( colorLeft ? dc : value, colorLeft ? value : dc ), 0.0, 1.0 ) ),
+              static_cast<float>( std::clamp( computeDouble( colorLeft ? dm : value, colorLeft ? value : dm ), 0.0, 1.0 ) ),
+              static_cast<float>( std::clamp( computeDouble( colorLeft ? dy : value, colorLeft ? value : dy ), 0.0, 1.0 ) ),
+              static_cast<float>( std::clamp( computeDouble( colorLeft ? dk : value, colorLeft ? value : dk ), 0.0, 1.0 ) ),
+              a
+            );
+          }
+          case QColor::Hsl:
+          case QColor::Hsv:
+          case QColor::Rgb:
+          case QColor::ExtendedRgb: // color_rgbf constructor clamps it to 0-1, so we do the same here
+          {
+            float r, g, b, a;
+            color.getRgbF( &r, &g, &b, &a );
+            const double dr = static_cast<double>( r );
+            const double dg = static_cast<double>( g );
+            const double db = static_cast<double>( b );
+
+            return QColor::fromRgbF(
+              static_cast<float>( std::clamp( computeDouble( colorLeft ? dr : value, colorLeft ? value : dr ), 0.0, 1.0 ) ),
+              static_cast<float>( std::clamp( computeDouble( colorLeft ? dg : value, colorLeft ? value : dg ), 0.0, 1.0 ) ),
+              static_cast<float>( std::clamp( computeDouble( colorLeft ? db : value, colorLeft ? value : db ), 0.0, 1.0 ) ),
+              a
+            );
+          }
+          default:
+            return QVariant();
+        }
       }
       else
       {
@@ -1154,6 +1312,26 @@ bool QgsExpressionNodeBinaryOperator::isStatic( QgsExpression *parent, const Qgs
   return false;
 }
 
+QgsExpressionNode *QgsExpressionNodeBinaryOperator::simplifiedNode() const
+{
+  std::unique_ptr< QgsExpressionNode > opLeft( mOpLeft->simplifiedNode() );
+  std::unique_ptr< QgsExpressionNode > opRight( mOpRight->simplifiedNode() );
+
+  // if both operands are literals, evaluate the operation
+  if ( opLeft->nodeType() == ntLiteral && opRight->nodeType() == ntLiteral )
+  {
+    QgsExpressionNodeBinaryOperator tempNode( mOp, opLeft->clone(), opRight->clone() );
+    QgsExpression parentExp;
+    QVariant result = tempNode.eval( &parentExp, nullptr );
+    if ( !parentExp.hasEvalError() )
+    {
+      return new QgsExpressionNodeLiteral( result );
+    }
+  }
+
+  return new QgsExpressionNodeBinaryOperator( mOp, opLeft.release(), opRight.release() );
+}
+
 //
 
 QVariant QgsExpressionNodeInOperator::evalNode( QgsExpression *parent, const QgsExpressionContext *context )
@@ -1253,6 +1431,46 @@ bool QgsExpressionNodeInOperator::isStatic( QgsExpression *parent, const QgsExpr
   }
 
   return true;
+}
+
+QgsExpressionNode *QgsExpressionNodeInOperator::simplifiedNode() const
+{
+  std::unique_ptr< QgsExpressionNode > simplifiedTargetNode( mNode->simplifiedNode() );
+  bool allLiterals = simplifiedTargetNode->nodeType() == ntLiteral;
+
+  auto simplifiedList = std::make_unique< QgsExpressionNode::NodeList >();
+  simplifiedList->reserve( mList->count() );
+  for ( QgsExpressionNode *node : mList->list() )
+  {
+    std::unique_ptr< QgsExpressionNode > simplifiedItem( node->simplifiedNode() );
+    if ( simplifiedItem->nodeType() != ntLiteral )
+    {
+      allLiterals = false;
+    }
+
+    if ( simplifiedTargetNode->nodeType() == ntLiteral
+         && simplifiedItem->nodeType() == ntLiteral
+         && qgis::down_cast< QgsExpressionNodeLiteral *>( simplifiedTargetNode.get() )->value() == qgis::down_cast< QgsExpressionNodeLiteral * >( simplifiedItem.get() )->value() )
+    {
+      return new QgsExpressionNodeLiteral( !mNotIn );
+    }
+
+    simplifiedList->append( simplifiedItem.release() );
+  }
+
+  // if target node and all items in the list are literals, we can just directly evaluate and replace with a literal
+  if ( allLiterals )
+  {
+    QgsExpressionNodeInOperator tempNode( simplifiedTargetNode->clone(), simplifiedList->clone(), mNotIn );
+    QgsExpression parentExp;
+    QVariant result = tempNode.eval( &parentExp, nullptr );
+    if ( !parentExp.hasEvalError() )
+    {
+      return new QgsExpressionNodeLiteral( result );
+    }
+  }
+
+  return new QgsExpressionNodeInOperator( simplifiedTargetNode.release(), simplifiedList.release(), mNotIn );
 }
 
 //
@@ -1476,6 +1694,23 @@ QgsExpressionNode *QgsExpressionNodeFunction::clone() const
 bool QgsExpressionNodeFunction::isStatic( QgsExpression *parent, const QgsExpressionContext *context ) const
 {
   return QgsExpression::Functions()[mFnIndex]->isStatic( this, parent, context );
+}
+
+QgsExpressionNode *QgsExpressionNodeFunction::simplifiedNode() const
+{
+  auto simplifiedArgs = std::make_unique< QgsExpressionNode::NodeList >();
+  if ( mArgs )
+  {
+    simplifiedArgs->reserve( mArgs->count() );
+    for ( QgsExpressionNode *arg : mArgs->list() )
+    {
+      std::unique_ptr< QgsExpressionNode > simplifiedArg( arg->simplifiedNode() );
+      simplifiedArgs->append( simplifiedArg.release() );
+    }
+
+    return new QgsExpressionNodeFunction( mFnIndex, simplifiedArgs.release() );
+  }
+  return clone();
 }
 
 bool QgsExpressionNodeFunction::validateParams( int fnIndex, QgsExpressionNode::NodeList *args, QString &error )
@@ -1973,6 +2208,37 @@ bool QgsExpressionNodeCondition::isStatic( QgsExpression *parent, const QgsExpre
   return true;
 }
 
+QgsExpressionNode *QgsExpressionNodeCondition::simplifiedNode() const
+{
+  auto simplifiedWhenThenList = std::make_unique< QgsExpressionNodeCondition::WhenThenList >();
+  for ( QgsExpressionNodeCondition::WhenThen *clause : mConditions )
+  {
+    std::unique_ptr< QgsExpressionNode > simplifiedWhen( clause->whenExp()->simplifiedNode() );
+    std::unique_ptr< QgsExpressionNode > simplifiedThen( clause->thenExp()->simplifiedNode() );
+
+    // if when condition is literal and TRUE we can just return the simplified THEN node
+    if ( simplifiedWhenThenList->isEmpty() && simplifiedWhen->nodeType() == ntLiteral && simplifiedWhen->eval( nullptr, nullptr ).toBool() )
+    {
+      return simplifiedThen.release();
+    }
+    // if when simplifies to literal and FALSE, skip this condition as it can never be reached
+    else if ( simplifiedWhen->nodeType() == ntLiteral && !simplifiedWhen->eval( nullptr, nullptr ).toBool() )
+    {
+      continue;
+    }
+
+    simplifiedWhenThenList->append( new QgsExpressionNodeCondition::WhenThen( simplifiedWhen.release(), simplifiedThen.release() ) );
+  }
+
+  std::unique_ptr< QgsExpressionNode > simplifiedElse( mElseExp ? mElseExp->simplifiedNode() : nullptr );
+  if ( simplifiedWhenThenList->isEmpty() )
+  {
+    return simplifiedElse ? simplifiedElse.release() : new QgsExpressionNodeLiteral( QVariant() );
+  }
+
+  return new QgsExpressionNodeCondition( simplifiedWhenThenList.release(), simplifiedElse.release() );
+}
+
 QSet<QString> QgsExpressionNodeInOperator::referencedColumns() const
 {
   if ( hasCachedStaticValue() )
@@ -2007,6 +2273,7 @@ QList<const QgsExpressionNode *> QgsExpressionNodeInOperator::nodes() const
 {
   QList<const QgsExpressionNode *> lst;
   lst << this;
+  lst << mNode.get();
   const QList< QgsExpressionNode * > nodeList = mList->list();
   for ( const QgsExpressionNode *n : nodeList )
     lst += n->nodes();

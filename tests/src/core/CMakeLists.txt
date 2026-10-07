@@ -85,8 +85,10 @@ set(TESTS
  testqgsgenericspatialindex.cpp
  testqgsgeometryimport.cpp
  testqgsgeopdfexport.cpp
+ testqgsgeos.cpp
  testqgsgltfutils.cpp
  testqgsgml.cpp
+ testqgsgpkgtiles.cpp
  testqgsgradients.cpp
  testqgsgraduatedsymbolrenderer.cpp
  testqgshistogram.cpp
@@ -203,6 +205,7 @@ set(TESTS
  testqgsstac.cpp
  testqgsstackeddiagram.cpp
  testqgsrelation.cpp
+ testqgsscopedconnection.cpp
  testqgsstatisticalsummary.cpp
  testqgsstoredexpressionmanager.cpp
  testqgsstringutils.cpp

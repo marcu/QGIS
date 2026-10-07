@@ -111,8 +111,10 @@ bool QgsSimplifyAlgorithm::prepareAlgorithm( const QVariantMap &parameters, QgsP
   return true;
 }
 
-QgsFeatureList QgsSimplifyAlgorithm::processFeature( const QgsFeature &feature, QgsProcessingContext &context, QgsProcessingFeedback * )
+QgsFeatureList QgsSimplifyAlgorithm::processFeature( const QgsFeature &feature, QgsProcessingContext &context, QgsProcessingFeedback *feedback )
 {
+  QGS_MARK_ALGORITHM_SOURCE
+
   QgsFeature f = feature;
   if ( f.hasGeometry() )
   {
@@ -123,7 +125,7 @@ QgsFeatureList QgsSimplifyAlgorithm::processFeature( const QgsFeature &feature, 
       double tolerance = mTolerance;
       if ( mDynamicTolerance )
         tolerance = mToleranceProperty.valueAsDouble( context.expressionContext(), tolerance );
-      outputGeometry = inputGeometry.simplify( tolerance );
+      outputGeometry = inputGeometry.simplify( tolerance, feedback );
     }
     else
     {

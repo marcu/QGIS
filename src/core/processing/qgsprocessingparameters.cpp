@@ -811,7 +811,12 @@ QgsProcessingFeatureSource *QgsProcessingParameters::parameterAsSource( const Qg
   if ( !definition )
     return nullptr;
 
-  return QgsProcessingUtils::variantToSource( value, context, definition->defaultValue() );
+  QgsProcessingFeatureSource *result = QgsProcessingUtils::variantToSource( value, context, definition->defaultValue() );
+  if ( QgsProcessingFeedback *feedback = context.feedback(); feedback && result )
+  {
+    feedback->reportSourceLoaded( definition->name(), result->featureCount() );
+  }
+  return result;
 }
 
 QString parameterAsCompatibleSourceLayerPathInternal(
@@ -2604,8 +2609,7 @@ QVariant QgsProcessingParameterDefinition::defaultGuiValueFromSetting() const
 {
   if ( mAlgorithm )
   {
-    QgsSettings s;
-    QVariant settingValue = s.value( u"/Processing/DefaultGuiParam/%1/%2"_s.arg( mAlgorithm->id() ).arg( mName ) );
+    const QVariant settingValue = QgsProcessing::settingsDefaultGuiParam->value( { mAlgorithm->id(), mName } );
     if ( settingValue.isValid() )
     {
       return settingValue;
@@ -7139,11 +7143,18 @@ QString QgsProcessingParameterRasterDestination::createFileFilter() const
   // QgsProcessingLayerOutputDestinationWidget::selectFile() will misbehave.
   for ( const QPair<QString, QString> &formatAndExt : std::as_const( formatAndExtensions ) )
   {
-    QString format = formatAndExt.first;
+    const QString &format = formatAndExt.first;
     const QString &extension = formatAndExt.second;
     if ( format.isEmpty() )
-      format = extension;
-    filters << QObject::tr( "%1 files (*.%2)" ).arg( format.toUpper(), extension.toLower() );
+    {
+      filters << QObject::tr( "%1 files (*.%2)" ).arg( extension.toUpper(), extension.toLower() );
+    }
+    else
+    {
+      // QgsProcessingLayerOutputDestinationWidget::selectFile() is sensitive
+      // to this "%1 - %2" format
+      filters << QObject::tr( "%1 - %2 files (*.%3)" ).arg( format.toUpper(), extension.toLower(), extension.toLower() );
+    }
   }
 
   return filters.join( ";;"_L1 ) + u";;"_s + QObject::tr( "All files (*.*)" );
@@ -9706,7 +9717,8 @@ QString QgsProcessingParameterAnnotationLayer::valueAsPythonString( const QVaria
   QVariantMap p;
   p.insert( name(), val );
   QgsAnnotationLayer *layer = QgsProcessingParameters::parameterAsAnnotationLayer( this, p, context );
-  return layer ? QgsProcessingUtils::stringToPythonLiteral( layer == context.project()->mainAnnotationLayer() ? u"main"_s : layer->id() ) : QgsProcessingUtils::stringToPythonLiteral( val.toString() );
+  return layer ? QgsProcessingUtils::stringToPythonLiteral( context.project() && layer == context.project()->mainAnnotationLayer() ? u"main"_s : layer->id() )
+               : QgsProcessingUtils::stringToPythonLiteral( val.toString() );
 }
 
 QString QgsProcessingParameterAnnotationLayer::valueAsString( const QVariant &value, QgsProcessingContext &context, bool &ok ) const

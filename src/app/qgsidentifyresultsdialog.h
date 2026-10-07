@@ -28,6 +28,7 @@
 #include "qgshelp.h"
 #include "qgsmaptoolidentify.h"
 #include "qgsmaptoolselectionhandler.h"
+#include "qgsrasterlayer.h"
 #include "qgsrelation.h"
 #include "qgswebview.h"
 
@@ -45,7 +46,6 @@ class QMenu;
 
 class QgsFeatureStore;
 class QgsVectorLayer;
-class QgsRasterLayer;
 class QgsHighlight;
 class QgsMapCanvas;
 class QgsMeshLayer;
@@ -53,6 +53,7 @@ class QgsDockWidget;
 class QgsMapLayerAction;
 class QgsEditorWidgetSetup;
 class QgsSettingsEntryBool;
+class QgsSettingsEntryInteger;
 class QgsTiledSceneLayer;
 
 class QwtPlotCurve;
@@ -160,6 +161,11 @@ class APP_EXPORT QgsIdentifyResultsDialog : public QDialog, private Ui::QgsIdent
 
     static const QgsSettingsEntryBool *settingHideNullValues;
     static const QgsSettingsEntryBool *settingShowRelations;
+    static const QgsSettingsEntryBool *settingIdentifyExpand;
+    static const QgsSettingsEntryBool *settingIdentifyAutoFeatureForm;
+    static const QgsSettingsEntryBool *settingHideDerivedAttributes;
+    static const QgsSettingsEntryInteger *settingColumnWidth;
+    static const QgsSettingsEntryInteger *settingColumnWidthTable;
 
     //! Adds feature from vector layer
     void addFeature( QgsVectorLayer *layer, const QgsFeature &f, const QMap<QString, QString> &derivedAttributes );

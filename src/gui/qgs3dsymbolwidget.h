@@ -16,8 +16,10 @@
 #ifndef QGS3DSYMBOLWIDGET_H
 #define QGS3DSYMBOLWIDGET_H
 
+#include "qgis.h"
 #include "qgis_gui.h"
 #include "qgis_sip.h"
+#include "qgspanelwidget.h"
 
 #include <QDialog>
 #include <QWidget>
@@ -32,7 +34,7 @@ class QDialogButtonBox;
  * \brief Base class for 3D symbol configuration widgets.
  * \since QGIS 3.16
  */
-class GUI_EXPORT Qgs3DSymbolWidget : public QWidget
+class GUI_EXPORT Qgs3DSymbolWidget : public QgsPanelWidget
 {
     Q_OBJECT
 
@@ -59,12 +61,35 @@ class GUI_EXPORT Qgs3DSymbolWidget : public QWidget
      */
     virtual QString symbolType() const = 0;
 
+    /**
+     * Returns associated rendering technique.
+     *
+     * \warning This is not considered stable API, and may change in future QGIS releases. It is
+     * exposed to the Python bindings as a tech preview only.
+     *
+     * \since QGIS 4.2
+     */
+    virtual Qgis::MaterialRenderingTechnique renderingTechnique() const = 0;
+
+    /**
+     * Sets the widget \a mode, which controls whether the compact or full
+     * set of material settings controls are shown.
+     *
+     * \since QGIS 4.4
+     */
+    virtual void setMode( Qgis::MaterialWidgetMode mode ) = 0;
+
   signals:
 
     /**
-     * Emitted when the symbol is changed.
+     * Emitted when the rendering technique associated with the symbol is changed.
+     *
+     * \warning This is not considered stable API, and may change in future QGIS releases. It is
+     * exposed to the Python bindings as a tech preview only.
+     *
+     * \since QGIS 4.2
      */
-    void changed();
+    void renderingTechniqueChanged();
 };
 
 

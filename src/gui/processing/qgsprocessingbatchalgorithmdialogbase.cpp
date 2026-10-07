@@ -22,6 +22,7 @@
 #include "qgsprocessingalgorithm.h"
 #include "qgsprocessingalgrunnertask.h"
 #include "qgsprocessingbatch.h"
+#include "qgsprocessingregistry.h"
 #include "qgsproxyprogresstask.h"
 
 #include <QString>
@@ -31,8 +32,8 @@
 using namespace Qt::StringLiterals;
 
 ///@cond NOT_STABLE
-QgsProcessingBatchAlgorithmDialogBase::QgsProcessingBatchAlgorithmDialogBase( QWidget *parent, Qt::WindowFlags flags )
-  : QgsProcessingAlgorithmDialogBase( parent, flags, QgsProcessingAlgorithmDialogBase::DialogMode::Batch )
+QgsProcessingBatchAlgorithmDialogBase::QgsProcessingBatchAlgorithmDialogBase( QMainWindow *parentWindow )
+  : QgsProcessingAlgorithmWidgetBase( parentWindow, QgsProcessingAlgorithmWidgetBase::WidgetMode::Batch )
 {
   mButtonRunSingle = new QPushButton( tr( "Run as Single Process…" ) );
   connect( mButtonRunSingle, &QPushButton::clicked, this, &QgsProcessingBatchAlgorithmDialogBase::runAsSingle );
@@ -140,7 +141,7 @@ void QgsProcessingBatchAlgorithmDialogBase::executeNext()
 void QgsProcessingBatchAlgorithmDialogBase::algExecuted( bool successful, const QVariantMap &results )
 {
   // parent class cleanup first!
-  QgsProcessingAlgorithmDialogBase::algExecuted( successful, results );
+  QgsProcessingAlgorithmWidgetBase::algExecuted( successful, results );
   onTaskComplete( successful, results );
 }
 
@@ -157,8 +158,10 @@ void QgsProcessingBatchAlgorithmDialogBase::onTaskComplete( bool ok, const QVari
 
     mResults.append( QVariantMap( { { u"parameters"_s, mCurrentParameters }, { u"results"_s, results } } ) );
 
-    handleAlgorithmResults( algorithm(), *mTaskContext, mBatchFeedback.get(), mCurrentParameters );
-    executeNext();
+    QgsApplication::processingRegistry()->handleAlgorithmResults( algorithm(), *mTaskContext, mCurrentParameters, mBatchFeedback.get() );
+
+    // must not start the next step from within QgsTaskManager::taskStatusChanged() (fix #53806)
+    QMetaObject::invokeMethod( this, &QgsProcessingBatchAlgorithmDialogBase::executeNext, Qt::QueuedConnection );
   }
   else if ( mBatchFeedback->isCanceled() )
   {
@@ -173,7 +176,9 @@ void QgsProcessingBatchAlgorithmDialogBase::onTaskComplete( bool ok, const QVari
     reportError( tr( "Execution failed after %1 seconds" ).arg( mCurrentStepTimer.elapsed() / 1000.0, 2 ), false );
 
     mErrors.append( QVariantMap( { { u"parameters"_s, mCurrentParameters }, { u"errors"_s, taskErrors } } ) );
-    executeNext();
+
+    // must not start the next step from within QgsTaskManager::taskStatusChanged() (fix #53806)
+    QMetaObject::invokeMethod( this, &QgsProcessingBatchAlgorithmDialogBase::executeNext, Qt::QueuedConnection );
   }
 }
 

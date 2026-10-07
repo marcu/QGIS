@@ -18,10 +18,12 @@
 
 #include <memory>
 
+#include "qgspanelwidget.h"
 #include "qgsstyle.h"
 
 #include <QWidget>
 
+class QAction;
 class QLabel;
 class QStackedWidget;
 
@@ -36,7 +38,7 @@ class QgsVectorLayer;
 /**
  * Widget for selection of 3D symbol
  */
-class QgsSymbol3DWidget : public QWidget
+class QgsSymbol3DWidget : public QgsPanelWidget
 {
     Q_OBJECT
 
@@ -49,13 +51,21 @@ class QgsSymbol3DWidget : public QWidget
     //! Sets symbol and layer (does not take ownership)
     void setSymbol( const QgsAbstract3DSymbol *symbol, QgsVectorLayer *vlayer );
 
-  signals:
-    void widgetChanged();
+    void setDockMode( bool dockMode ) override;
+
+    /**
+     * Sets the widget \a mode, which controls whether the compact or full
+     * set of material settings controls are shown.
+     *
+     * \since QGIS 4.4
+     */
+    void setMode( Qgis::MaterialWidgetMode mode );
 
   private slots:
 
     void setSymbolFromStyle( const QString &name, QgsStyle::StyleEntity entity, const QString &stylePath );
     void saveSymbol();
+    void showAdvancedSymbolSettings();
 
   private:
     void updateSymbolWidget( const QgsAbstract3DSymbol *newSymbol );
@@ -66,6 +76,10 @@ class QgsSymbol3DWidget : public QWidget
     QgsStyleItemsListWidget *mStyleWidget = nullptr;
 
     QgsVectorLayer *mLayer = nullptr;
+
+    QAction *mAdvancedMaterialSettingsAction = nullptr;
+
+    Qgis::MaterialWidgetMode mMode = Qgis::MaterialWidgetMode::Full;
 };
 
 

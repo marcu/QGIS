@@ -57,7 +57,7 @@ QgsMapCanvasDockWidget::QgsMapCanvasDockWidget( const QString &name, QWidget *pa
   qgis::down_cast<QVBoxLayout *>( layout() )->setSpacing( 0 );
 
   setWindowTitle( mCanvasName );
-  mToolbar->setIconSize( QgisApp::instance()->iconSize( true ) );
+  mToolbar->setIconSize( QgsGui::iconSize( Qgis::UserInterfaceIconType::DockedToolbar ) );
 
   mMapCanvas = new QgsMapCanvas( this );
   mMapCanvas->setFlags( Qgis::MapCanvasFlag::ShowMainAnnotationLayer );
@@ -252,7 +252,7 @@ QgsMapCanvasDockWidget::QgsMapCanvasDockWidget( const QString &name, QWidget *pa
   connect( QgsProject::instance()->mapThemeCollection(), &QgsMapThemeCollection::mapThemeRenamed, this, &QgsMapCanvasDockWidget::currentMapThemeRenamed );
 
   mDockableWidgetHelper
-    = new QgsDockableWidgetHelper( mCanvasName, this, QgisApp::instance(), mCanvasName, QStringList(), isDocked ? QgsDockableWidgetHelper::OpeningMode::ForceDocked : QgsDockableWidgetHelper::OpeningMode::RespectSetting );
+    = new QgsDockableWidgetHelper( mCanvasName, this, QgisApp::instance(), mCanvasName, QStringList(), isDocked ? Qgis::DockableWidgetInitialState::ForceDocked : Qgis::DockableWidgetInitialState::RestorePreviousState );
   QToolButton *toggleButton = mDockableWidgetHelper->createDockUndockToolButton();
   toggleButton->setToolTip( tr( "Dock 2D Map View" ) );
   mToolbar->addWidget( toggleButton );

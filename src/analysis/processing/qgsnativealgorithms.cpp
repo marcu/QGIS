@@ -69,11 +69,13 @@
 #include "qgsalgorithmclip.h"
 #include "qgsalgorithmconcavehull.h"
 #include "qgsalgorithmconcavehullbyfeature.h"
+#include "qgsalgorithmconcavehullofpolygons.h"
 #include "qgsalgorithmconditionalbranch.h"
 #include "qgsalgorithmconstantraster.h"
 #include "qgsalgorithmconvertgeometrytype.h"
 #include "qgsalgorithmconverttocurves.h"
 #include "qgsalgorithmconvexhull.h"
+#include "qgsalgorithmcoverageclean.h"
 #include "qgsalgorithmcoveragesimplify.h"
 #include "qgsalgorithmcoverageunion.h"
 #include "qgsalgorithmcoveragevalidate.h"
@@ -87,6 +89,7 @@
 #include "qgsalgorithmdetectdatasetchanges.h"
 #include "qgsalgorithmdifference.h"
 #include "qgsalgorithmdissolve.h"
+#include "qgsalgorithmdistancematrix.h"
 #include "qgsalgorithmdistancewithin.h"
 #include "qgsalgorithmdownloadvectortiles.h"
 #include "qgsalgorithmdrape.h"
@@ -98,6 +101,7 @@
 #include "qgsalgorithmexecutepostgisquery.h"
 #include "qgsalgorithmexecutespatialitequery.h"
 #include "qgsalgorithmexecutespatialitequeryregistered.h"
+#include "qgsalgorithmexecutesql.h"
 #include "qgsalgorithmexplode.h"
 #include "qgsalgorithmexplodehstore.h"
 #include "qgsalgorithmexportgeometryattributes.h"
@@ -120,6 +124,7 @@
 #include "qgsalgorithmextractspecificvertices.h"
 #include "qgsalgorithmextractvertices.h"
 #include "qgsalgorithmextractzmvalues.h"
+#include "qgsalgorithmextrude.h"
 #include "qgsalgorithmfieldcalculator.h"
 #include "qgsalgorithmfiledownloader.h"
 #include "qgsalgorithmfileuploader.h"
@@ -147,6 +152,8 @@
 #include "qgsalgorithmgenerateelevationprofile.h"
 #include "qgsalgorithmgeometrybyexpression.h"
 #include "qgsalgorithmgltftovector.h"
+#include "qgsalgorithmheatmap.h"
+#include "qgsalgorithmidwinterpolation.h"
 #include "qgsruntimeprofiler.h"
 
 #include <QString>
@@ -161,6 +168,7 @@ using namespace Qt::StringLiterals;
 #include "qgsalgorithmgrid.h"
 #include "qgsalgorithmhillshade.h"
 #include "qgsalgorithmhubdistance.h"
+#include "qgsalgorithmhypsometriccurves.h"
 #include "qgsalgorithmjoinbyattribute.h"
 #include "qgsalgorithmjoinbylocation.h"
 #include "qgsalgorithmjoinbylocationsummary.h"
@@ -211,11 +219,13 @@ using namespace Qt::StringLiterals;
 #include "qgsalgorithmpromotetomultipart.h"
 #include "qgsalgorithmraiseexception.h"
 #include "qgsalgorithmrandomextract.h"
+#include "qgsalgorithmrandomextractwithinsubsets.h"
 #include "qgsalgorithmrandompointsextent.h"
 #include "qgsalgorithmrandompointsinpolygons.h"
 #include "qgsalgorithmrandompointsonlines.h"
 #include "qgsalgorithmrandomraster.h"
 #include "qgsalgorithmrastercalculator.h"
+#include "qgsalgorithmrastercellindex.h"
 #include "qgsalgorithmrasterdtmslopebasedfilter.h"
 #include "qgsalgorithmrasterfeaturepreservingsmoothing.h"
 #include "qgsalgorithmrasterfrequencybycomparisonoperator.h"
@@ -234,6 +244,7 @@ using namespace Qt::StringLiterals;
 #include "qgsalgorithmreclassifybylayer.h"
 #include "qgsalgorithmrectanglesovalsdiamonds.h"
 #include "qgsalgorithmrefactorfields.h"
+#include "qgsalgorithmrelief.h"
 #include "qgsalgorithmremoveduplicatesbyattribute.h"
 #include "qgsalgorithmremoveduplicatevertices.h"
 #include "qgsalgorithmremoveholes.h"
@@ -253,6 +264,8 @@ using namespace Qt::StringLiterals;
 #include "qgsalgorithmsavelog.h"
 #include "qgsalgorithmsaveselectedfeatures.h"
 #include "qgsalgorithmsegmentize.h"
+#include "qgsalgorithmselectbyattribute.h"
+#include "qgsalgorithmselectbyexpression.h"
 #include "qgsalgorithmserviceareafromlayer.h"
 #include "qgsalgorithmserviceareafrompoint.h"
 #include "qgsalgorithmsetlayerencoding.h"
@@ -276,6 +289,7 @@ using namespace Qt::StringLiterals;
 #include "qgsalgorithmsplitlinesbylength.h"
 #include "qgsalgorithmsplitvectorlayer.h"
 #include "qgsalgorithmsplitwithlines.h"
+#include "qgsalgorithmstatisticsbycategories.h"
 #include "qgsalgorithmstdbscanclustering.h"
 #include "qgsalgorithmstringconcatenation.h"
 #include "qgsalgorithmsubdivide.h"
@@ -283,8 +297,11 @@ using namespace Qt::StringLiterals;
 #include "qgsalgorithmswapxy.h"
 #include "qgsalgorithmsymmetricaldifference.h"
 #include "qgsalgorithmtaperedbuffer.h"
+#include "qgsalgorithmtexttofloat.h"
+#include "qgsalgorithmtininterpolation.h"
 #include "qgsalgorithmtinmeshcreation.h"
 #include "qgsalgorithmtotalcurvature.h"
+#include "qgsalgorithmtpsinterpolation.h"
 #include "qgsalgorithmtransect.h"
 #include "qgsalgorithmtransectfixeddistance.h"
 #include "qgsalgorithmtransform.h"
@@ -293,6 +310,7 @@ using namespace Qt::StringLiterals;
 #include "qgsalgorithmunion.h"
 #include "qgsalgorithmuniquevalues.h"
 #include "qgsalgorithmuniquevalueindex.h"
+#include "qgsalgorithmupslopearea.h"
 #include "qgsalgorithmurlopener.h"
 #include "qgsalgorithmhttprequest.h"
 #include "qgsalgorithmvalidatenetwork.h"
@@ -312,6 +330,10 @@ using namespace Qt::StringLiterals;
 #include "qgsmetadataalgorithms.h"
 #include "qgsprojectstylealgorithms.h"
 #include "qgsstylealgorithms.h"
+#include "qgsalgorithmflowconnectivity.h"
+#include "qgsalgorithmflowdirection.h"
+#include "qgsalgorithmstrahlerorder.h"
+#include "qgsalgorithmchannelnetwork.h"
 
 ///@cond PRIVATE
 
@@ -389,6 +411,8 @@ void QgsNativeAlgorithms::loadAlgorithms()
   addAlgorithm( new QgsCellStatisticsPercentRankFromRasterAlgorithm() );
   addAlgorithm( new QgsCellStatisticsPercentRankFromValueAlgorithm() );
   addAlgorithm( new QgsCentroidAlgorithm() );
+  addAlgorithm( new QgsChannelNetworkFromDemAlgorithm() );
+  addAlgorithm( new QgsChannelNetworkFromFlowDirAndOrderAlgorithm() );
   addAlgorithm( new QgsCheckValidityAlgorithm() );
   addAlgorithm( new QgsGeometryCheckSegmentLengthAlgorithm() );
   addAlgorithm( new QgsGeometryCheckAngleAlgorithm() );
@@ -417,6 +441,7 @@ void QgsNativeAlgorithms::loadAlgorithms()
   addAlgorithm( new QgsCombineStylesAlgorithm() );
   addAlgorithm( new QgsConcaveHullAlgorithm() );
   addAlgorithm( new QgsConcaveHullByFeatureAlgorithm() );
+  addAlgorithm( new QgsConcaveHullOfPolygonsAlgorithm() );
   addAlgorithm( new QgsConditionalBranchAlgorithm() );
   addAlgorithm( new QgsConstantRasterAlgorithm() );
   addAlgorithm( new QgsConvertToCurvesAlgorithm() );
@@ -426,6 +451,7 @@ void QgsNativeAlgorithms::loadAlgorithms()
   addAlgorithm( new QgsCoverageSimplifyAlgorithm() );
   addAlgorithm( new QgsCoverageUnionAlgorithm() );
   addAlgorithm( new QgsCoverageValidateAlgorithm() );
+  addAlgorithm( new QgsCoverageCleanAlgorithm() );
   addAlgorithm( new QgsCreateDirectoryAlgorithm() );
   addAlgorithm( new QgsDbscanClusteringAlgorithm() );
   addAlgorithm( new QgsDefineProjectionAlgorithm() );
@@ -434,6 +460,7 @@ void QgsNativeAlgorithms::loadAlgorithms()
   addAlgorithm( new QgsDetectVectorChangesAlgorithm() );
   addAlgorithm( new QgsDifferenceAlgorithm() );
   addAlgorithm( new QgsDissolveAlgorithm() );
+  addAlgorithm( new QgsDistanceMatrixAlgorithm() );
   addAlgorithm( new QgsDownloadVectorTilesAlgorithm() );
   addAlgorithm( new QgsDrapeToMAlgorithm() );
   addAlgorithm( new QgsDrapeToZAlgorithm() );
@@ -441,10 +468,12 @@ void QgsNativeAlgorithms::loadAlgorithms()
   addAlgorithm( new QgsDropGeometryAlgorithm() );
   addAlgorithm( new QgsDropMZValuesAlgorithm() );
   addAlgorithm( new QgsDxfExportAlgorithm() );
+  addAlgorithm( new QgsExtrudeAlgorithm() );
   addAlgorithm( new QgsExecuteAndLoadPostgisQueryAlgorithm() );
   addAlgorithm( new QgsExecutePostgisQueryAlgorithm() );
   addAlgorithm( new QgsExecuteRegisteredSpatialiteQueryAlgorithm() );
   addAlgorithm( new QgsExecuteSpatialiteQueryAlgorithm() );
+  addAlgorithm( new QgsExecuteSqlAlgorithm() );
   addAlgorithm( new QgsExplodeAlgorithm() );
   addAlgorithm( new QgsExplodeHstoreAlgorithm() );
   addAlgorithm( new QgsExportGeometryAttributesAlgorithm() );
@@ -486,6 +515,8 @@ void QgsNativeAlgorithms::loadAlgorithms()
   addAlgorithm( new QgsFindProjectionAlgorithm() );
   addAlgorithm( new QgsFixGeometriesAlgorithm() );
   addAlgorithm( new QgsFlattenRelationshipsAlgorithm() );
+  addAlgorithm( new QgsFlowConnectivityD8Algorithm() );
+  addAlgorithm( new QgsFlowDirectionD8Algorithm() );
   addAlgorithm( new QgsForceCCWAlgorithm() );
   addAlgorithm( new QgsForceCWAlgorithm() );
   addAlgorithm( new QgsForceRHRAlgorithm() );
@@ -497,6 +528,7 @@ void QgsNativeAlgorithms::loadAlgorithms()
   addAlgorithm( new QgsFuzzifyRasterNearMembershipAlgorithm() );
   addAlgorithm( new QgsGenerateElevationProfileAlgorithm() );
   addAlgorithm( new QgsGeometryByExpressionAlgorithm() );
+  addAlgorithm( new QgsGlobalThinPlateSplineAlgorithm() );
   addAlgorithm( new QgsGltfToVectorFeaturesAlgorithm() );
 #if QT_CONFIG( process )
   addAlgorithm( new QgsConvertGpxFeatureTypeAlgorithm() );
@@ -505,8 +537,11 @@ void QgsNativeAlgorithms::loadAlgorithms()
   addAlgorithm( new QgsUploadGpsDataAlgorithm() );
 #endif
   addAlgorithm( new QgsGridAlgorithm() );
+  addAlgorithm( new QgsHeatmapAlgorithm() );
   addAlgorithm( new QgsHillshadeAlgorithm() );
   addAlgorithm( new QgsHubDistanceAlgorithm() );
+  addAlgorithm( new QgsHypsometricCurvesAlgorithm() );
+  addAlgorithm( new QgsIdwInterpolationAlgorithm() );
   addAlgorithm( new QgsImportPhotosAlgorithm() );
   addAlgorithm( new QgsInterpolatePointAlgorithm() );
   addAlgorithm( new QgsIntersectionAlgorithm() );
@@ -528,6 +563,7 @@ void QgsNativeAlgorithms::loadAlgorithms()
   addAlgorithm( new QgsLineIntersectionAlgorithm() );
   addAlgorithm( new QgsLineSubstringAlgorithm() );
   addAlgorithm( new QgsLoadLayerAlgorithm() );
+  addAlgorithm( new QgsLocalThinPlateSplineAlgorithm() );
   addAlgorithm( new QgsMeanCoordinatesAlgorithm() );
   addAlgorithm( new QgsMergeLinesAlgorithm() );
   addAlgorithm( new QgsMergeVectorAlgorithm() );
@@ -567,6 +603,7 @@ void QgsNativeAlgorithms::loadAlgorithms()
   addAlgorithm( new QgsRandomBinomialRasterAlgorithm() );
   addAlgorithm( new QgsRandomExponentialRasterAlgorithm() );
   addAlgorithm( new QgsRandomExtractAlgorithm() );
+  addAlgorithm( new QgsRandomExtractWithinSubsetsAlgorithm() );
   addAlgorithm( new QgsRandomGammaRasterAlgorithm() );
   addAlgorithm( new QgsRandomGeometricRasterAlgorithm() );
   addAlgorithm( new QgsRandomNegativeBinomialRasterAlgorithm() );
@@ -576,9 +613,11 @@ void QgsNativeAlgorithms::loadAlgorithms()
   addAlgorithm( new QgsRandomPointsOnLinesAlgorithm() );
   addAlgorithm( new QgsRandomPoissonRasterAlgorithm() );
   addAlgorithm( new QgsRandomSelectionAlgorithm() );
+  addAlgorithm( new QgsRandomSelectionWithinSubsetsAlgorithm() );
   addAlgorithm( new QgsRandomUniformRasterAlgorithm() );
   addAlgorithm( new QgsRasterCalculatorAlgorithm() );
   addAlgorithm( new QgsRasterCalculatorModelerAlgorithm() );
+  addAlgorithm( new QgsRasterCellIndexAlgorithm() );
   addAlgorithm( new QgsRasterDtmSlopeBasedFilterAlgorithm() );
   addAlgorithm( new QgsRasterFeaturePreservingSmoothingAlgorithm() );
   addAlgorithm( new QgsRasterFrequencyByEqualOperatorAlgorithm() );
@@ -605,6 +644,7 @@ void QgsNativeAlgorithms::loadAlgorithms()
   addAlgorithm( new QgsReclassifyByTableAlgorithm() );
   addAlgorithm( new QgsRectanglesOvalsDiamondsAlgorithm() );
   addAlgorithm( new QgsRefactorFieldsAlgorithm() );
+  addAlgorithm( new QgsReliefAlgorithm() );
   addAlgorithm( new QgsRemoveDuplicatesByAttributeAlgorithm() );
   addAlgorithm( new QgsRemoveHolesAlgorithm() );
   addAlgorithm( new QgsRemoveNullGeometryAlgorithm() );
@@ -625,6 +665,8 @@ void QgsNativeAlgorithms::loadAlgorithms()
   addAlgorithm( new QgsSaveSelectedFeatures() );
   addAlgorithm( new QgsSegmentizeByMaximumAngleAlgorithm() );
   addAlgorithm( new QgsSegmentizeByMaximumDistanceAlgorithm() );
+  addAlgorithm( new QgsSelectByAttributeAlgorithm() );
+  addAlgorithm( new QgsSelectByExpressionAlgorithm() );
   addAlgorithm( new QgsSelectByLocationAlgorithm() );
   addAlgorithm( new QgsSelectWithinDistanceAlgorithm() );
   addAlgorithm( new QgsServiceAreaFromLayerAlgorithm() );
@@ -651,7 +693,10 @@ void QgsNativeAlgorithms::loadAlgorithms()
   addAlgorithm( new QgsSplitLinesByLengthAlgorithm() );
   addAlgorithm( new QgsSplitVectorLayerAlgorithm() );
   addAlgorithm( new QgsSplitWithLinesAlgorithm() );
+  addAlgorithm( new QgsStatisticsByCategoriesAlgorithm() );
   addAlgorithm( new QgsStDbscanClusteringAlgorithm() );
+  addAlgorithm( new QgsStrahlerOrderFromDemAlgorithm() );
+  addAlgorithm( new QgsStrahlerOrderFromFlowDirectionAlgorithm() );
   addAlgorithm( new QgsStringConcatenationAlgorithm() );
   addAlgorithm( new QgsStyleFromProjectAlgorithm() );
   addAlgorithm( new QgsSubdivideAlgorithm() );
@@ -659,6 +704,8 @@ void QgsNativeAlgorithms::loadAlgorithms()
   addAlgorithm( new QgsSwapXYAlgorithm() );
   addAlgorithm( new QgsSymmetricalDifferenceAlgorithm() );
   addAlgorithm( new QgsTaperedBufferAlgorithm() );
+  addAlgorithm( new QgsTextToFloatAlgorithm() );
+  addAlgorithm( new QgsTinInterpolationAlgorithm() );
   addAlgorithm( new QgsTinMeshCreationAlgorithm() );
   addAlgorithm( new QgsTotalCurvatureAlgorithm() );
   addAlgorithm( new QgsTransectAlgorithm() );
@@ -673,6 +720,8 @@ void QgsNativeAlgorithms::loadAlgorithms()
   addAlgorithm( new QgsValidateNetworkAlgorithm() );
   addAlgorithm( new QgsOpenUrlAlgorithm() );
   addAlgorithm( new QgsHttpRequestAlgorithm() );
+  addAlgorithm( new QgsUpslopeAreaPointAlgorithm() );
+  addAlgorithm( new QgsUpslopeAreaLayerAlgorithm() );
   addAlgorithm( new QgsVariableWidthBufferByMAlgorithm() );
   addAlgorithm( new QgsVirtualRasterCalculatorAlgorithm() );
   addAlgorithm( new QgsVirtualRasterCalculatorModelerAlgorithm() );
@@ -682,6 +731,7 @@ void QgsNativeAlgorithms::loadAlgorithms()
   addAlgorithm( new QgsWriteVectorTilesMbtilesAlgorithm() );
   addAlgorithm( new QgsXyzTilesDirectoryAlgorithm() );
   addAlgorithm( new QgsXyzTilesMbtilesAlgorithm() );
+  addAlgorithm( new QgsXyzTilesGpkgAlgorithm() );
   addAlgorithm( new QgsZonalHistogramAlgorithm() );
   addAlgorithm( new QgsZonalMinimumMaximumPointAlgorithm() );
   addAlgorithm( new QgsZonalStatisticsAlgorithm() );

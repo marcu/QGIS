@@ -83,11 +83,6 @@ void TestQgsMapToolReshape::initTestCase()
   QgsApplication::init();
   QgsApplication::initQgis();
 
-  // Set up the QSettings environment
-  QCoreApplication::setOrganizationName( u"QGIS"_s );
-  QCoreApplication::setOrganizationDomain( u"qgis.org"_s );
-  QCoreApplication::setApplicationName( u"QGIS-TEST"_s );
-
   mQgisApp = new QgisApp();
 
   mCanvas = new QgsMapCanvas();
@@ -398,16 +393,28 @@ void TestQgsMapToolReshape::testAvoidIntersectionAndTopoEdit()
   utils.mouseClick( 4, 5, Qt::LeftButton, Qt::KeyboardModifiers() );
   utils.mouseClick( 4, 5, Qt::RightButton );
 
-  QCOMPARE( mLayerTopo2->getFeature( 1 ).geometry().asWkt(), u"Polygon ((0 5, 0 7, 4 7, 4 5, 3 4, 1 4, 0 5))"_s );
-  QCOMPARE( mLayerTopo->getFeature( 1 ).geometry().asWkt(), u"Polygon ((0 0, 4 0, 4 4, 3 4, 1 4, 0 4, 0 0))"_s );
-  QCOMPARE( mLayerTopo->getFeature( 2 ).geometry().asWkt(), u"Polygon ((7 0, 8 0, 8 4, 7 4, 7 0))"_s );
+  QgsGeometry geom = mLayerTopo2->getFeature( 1 ).geometry();
+  geom.normalize();
+  QCOMPARE( geom.asWkt(), u"Polygon ((0 5, 0 7, 4 7, 4 5, 3 4, 1 4, 0 5))"_s );
+  geom = mLayerTopo->getFeature( 1 ).geometry();
+  geom.normalize();
+  QCOMPARE( geom.asWkt(), u"Polygon ((0 0, 0 4, 1 4, 3 4, 4 4, 4 0, 0 0))"_s );
+  geom = mLayerTopo->getFeature( 2 ).geometry();
+  geom.normalize();
+  QCOMPARE( geom.asWkt(), u"Polygon ((7 0, 7 4, 8 4, 8 0, 7 0))"_s );
 
   mLayerTopo2->undoStack()->undo();
   mLayerTopo->undoStack()->undo();
 
-  QCOMPARE( mLayerTopo2->getFeature( 1 ).geometry().asWkt(), u"Polygon ((0 5, 4 5, 4 7, 0 7, 0 5))"_s );
-  QCOMPARE( mLayerTopo->getFeature( 1 ).geometry().asWkt(), u"Polygon ((0 0, 4 0, 4 4, 0 4, 0 0))"_s );
-  QCOMPARE( mLayerTopo->getFeature( 2 ).geometry().asWkt(), u"Polygon ((7 0, 8 0, 8 4, 7 4, 7 0))"_s );
+  geom = mLayerTopo2->getFeature( 1 ).geometry();
+  geom.normalize();
+  QCOMPARE( geom.asWkt(), u"Polygon ((0 5, 0 7, 4 7, 4 5, 0 5))"_s );
+  geom = mLayerTopo->getFeature( 1 ).geometry();
+  geom.normalize();
+  QCOMPARE( geom.asWkt(), u"Polygon ((0 0, 0 4, 4 4, 4 0, 0 0))"_s );
+  geom = mLayerTopo->getFeature( 2 ).geometry();
+  geom.normalize();
+  QCOMPARE( geom.asWkt(), u"Polygon ((7 0, 7 4, 8 4, 8 0, 7 0))"_s );
 
   QgsProject::instance()->setTopologicalEditing( topologicalEditing );
   QgsProject::instance()->setAvoidIntersectionsMode( mode );
@@ -489,9 +496,15 @@ void TestQgsMapToolReshape::testAvoidIntersectionAndTopoEditSameLayerSelection()
   utils.mouseClick( 4, 0, Qt::LeftButton, Qt::KeyboardModifiers() );
   utils.mouseClick( 4, 0, Qt::RightButton );
 
-  QCOMPARE( mLayerTopo2->getFeature( 1 ).geometry().asWkt(), u"Polygon ((0 5, 4 5, 4 7, 0 7, 0 5))"_s );
-  QCOMPARE( mLayerTopo->getFeature( 1 ).geometry().asWkt(), u"Polygon ((4 0, 0 0, 0 4, 4 4, 7 4, 7 0, 4 0))"_s );
-  QCOMPARE( mLayerTopo->getFeature( 2 ).geometry().asWkt(), u"Polygon ((7 0, 8 0, 8 4, 7 4, 7 0))"_s );
+  QgsGeometry geom = mLayerTopo2->getFeature( 1 ).geometry();
+  geom.normalize();
+  QCOMPARE( geom.asWkt(), u"Polygon ((0 5, 0 7, 4 7, 4 5, 0 5))"_s );
+  geom = mLayerTopo->getFeature( 1 ).geometry();
+  geom.normalize();
+  QCOMPARE( geom.asWkt(), u"Polygon ((0 0, 0 4, 4 4, 7 4, 7 0, 4 0, 0 0))"_s );
+  geom = mLayerTopo->getFeature( 2 ).geometry();
+  geom.normalize();
+  QCOMPARE( geom.asWkt(), u"Polygon ((7 0, 7 4, 8 4, 8 0, 7 0))"_s );
 
   mLayerTopo->undoStack()->undo();
 
@@ -681,7 +694,7 @@ void TestQgsMapToolReshape::testWithSnapToSegment()
   utils.mouseClick( 1, 2, Qt::LeftButton, {}, true );
   utils.mouseClick( 1, 2, Qt::RightButton );
 
-  QCOMPARE( mLayerPolygonZ->getFeature( 1 ).geometry().asWkt( 1 ), u"Polygon Z ((1.2 1.7 333, 1 5 333, 5.7 4.2 333, 7 5 4, 3 2 1, 0 1 2, 1.2 1.7 333))"_s );
+  QCOMPARE( mLayerPolygonZ->getFeature( 1 ).geometry().asWkt( 1 ), u"Polygon Z ((1.2 1.7 2.3, 1 5 333, 5.7 4.2 3.6, 7 5 4, 3 2 1, 0 1 2, 1.2 1.7 2.3))"_s );
 
   mLayerLine->undoStack()->undo();
 

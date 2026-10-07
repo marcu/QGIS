@@ -46,6 +46,7 @@ from qgis.core import (
     QgsRelation,
     QgsRelationContext,
     QgsSettings,
+    QgsSettingsTree,
     QgsVectorDataProvider,
     QgsVectorLayer,
     QgsVectorLayerExporter,
@@ -330,10 +331,6 @@ class TestPyQgsOGRProviderGpkg(QgisTestCase):
         """Run before all tests"""
         super().setUpClass()
 
-        QCoreApplication.setOrganizationName("QGIS_Test")
-        QCoreApplication.setOrganizationDomain("TestPyQgsOGRProviderGpkg.com")
-        QCoreApplication.setApplicationName("TestPyQgsOGRProviderGpkg")
-        QgsSettings().clear()
         start_app()
 
         # Create test layer
@@ -906,7 +903,9 @@ class TestPyQgsOGRProviderGpkg(QgisTestCase):
 
     def testDisablewalForSqlite3(self):
         """Test disabling walForSqlite3 setting"""
-        QgsSettings().setValue("/qgis/walForSqlite3", False)
+        QgsSettingsTree.node("database").childNode("sqlite3").childSetting(
+            "wal"
+        ).setValue(False)
 
         tmpfile = os.path.join(self.basetestpath, "testDisablewalForSqlite3.gpkg")
         ds = ogr.GetDriverByName("GPKG").CreateDataSource(tmpfile)
@@ -935,7 +934,9 @@ class TestPyQgsOGRProviderGpkg(QgisTestCase):
         self.assertIsNone(cbk.msg)
         vl = None
 
-        QgsSettings().setValue("/qgis/walForSqlite3", None)
+        QgsSettingsTree.node("database").childNode("sqlite3").childSetting(
+            "wal"
+        ).remove()
 
     @unittest.skipIf(
         int(gdal.VersionInfo("VERSION_NUM")) < GDAL_COMPUTE_VERSION(3, 4, 2),
@@ -3924,6 +3925,18 @@ class TestPyQgsOGRProviderGpkg(QgisTestCase):
                 dp.lastError(),
                 "wrong data type for attribute int_field of feature 2: Got QString, expected int",
             )
+
+    def testListFieldDomainsCapability(self):
+        """GeoPackage provider should report ListFieldDomains capability"""
+        srcpath = os.path.join(TEST_DATA_DIR, "provider")
+        srcfile = os.path.join(srcpath, "geopackage.gpkg")
+
+        vl = QgsVectorLayer(f"{srcfile}|layername=geopackage", "test", "ogr")
+        self.assertTrue(vl.isValid())
+        self.assertTrue(
+            vl.dataProvider().capabilities()
+            & Qgis.VectorProviderCapability.ReadFieldDomains
+        )
 
 
 if __name__ == "__main__":

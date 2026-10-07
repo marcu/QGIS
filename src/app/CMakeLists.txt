@@ -16,6 +16,7 @@ set(QGIS_APP_SRCS
   qgsappcoordinateoperationhandlers.cpp
   qgsappdbutils.cpp
   qgsapplayertreeviewmenuprovider.cpp
+  qgsappmenuutils.cpp
   qgsappwindowmanager.cpp
   qgsappscreenshots.cpp
   qgsanimationexportdialog.cpp
@@ -66,6 +67,7 @@ set(QGIS_APP_SRCS
   qgsrasterattributetableapputils.cpp
   qgssnappinglayertreemodel.cpp
   qgssnappingwidget.cpp
+  qgstopocentricwidget.cpp
   qgsstatusbarcoordinateswidget.cpp
   qgsstatusbarmagnifierwidget.cpp
   qgsstatusbarscalewidget.cpp
@@ -102,9 +104,6 @@ set(QGIS_APP_SRCS
   qgsmaptoolrotatefeature.cpp
   qgsmaptoolrotatepointsymbols.cpp
   qgsmaptoolscalefeature.cpp
-  qgsmaptoolselect.cpp
-  qgsmaptoolselectionhandler.cpp
-  qgsmaptoolselectutils.cpp
   qgsmaptoolsimplify.cpp
   qgsmaptoolsplitfeatures.cpp
   qgsmaptoolsplitparts.cpp
@@ -303,6 +302,9 @@ set(QGIS_APP_SRCS
   mesh/qgsmeshtransformcoordinatesdockwidget.cpp
   mesh/qgsmeshselectbyexpressiondialog.cpp
 
+  processing/qgsappprocessingutils.cpp
+  processing/qgsprocessingtoolboxdock.cpp
+
   vector/qgsvectorelevationpropertieswidget.cpp
 )
 
@@ -356,6 +358,7 @@ if (WITH_3D)
     3d/qgs3dapputils.cpp
     3d/qgs3dicongenerator.cpp
     3d/qgs3dmapconfigwidget.cpp
+    3d/qgs3dmapexportwidget.cpp
     3d/qgs3dmaptoolidentify.cpp
     3d/qgs3dmaptoolmeasureline.cpp
     3d/qgs3dmaptoolpointcloudchangeattributepaintbrush.cpp
@@ -366,25 +369,28 @@ if (WITH_3D)
     3d/qgs3dnavigationwidget.cpp
     3d/qgs3doptions.cpp
     3d/qgsannotationlayer3drendererwidget.cpp
+    3d/qgscategorized3drendererwidget.cpp
     3d/qgsgoochmaterialwidget.cpp
     3d/qgslightswidget.cpp
     3d/qgsline3dsymbolwidget.cpp
-    3d/qgsmaterialwidget.cpp
+    3d/qgsmaterialpreviewwidget.cpp
     3d/qgsmesh3dsymbolwidget.cpp
     3d/qgsmetalroughmaterialwidget.cpp
+    3d/qgsmetalroughtexturedmaterialwidget.cpp
     3d/qgsnullmaterialwidget.cpp
     3d/qgspoint3dsymbolwidget.cpp
     3d/qgspolygon3dsymbolwidget.cpp
     3d/qgsphongmaterialwidget.cpp
     3d/qgsphongtexturedmaterialwidget.cpp
     3d/qgsrulebased3drendererwidget.cpp
+    3d/qgs3dsymbolbutton.cpp
     3d/qgssimplelinematerialwidget.cpp
     3d/qgssymbol3dwidget.cpp
     3d/qgstiledscenelayer3drendererwidget.cpp
+    3d/qgsunlitmaterialwidget.cpp
     3d/qgsvectorlayer3dpropertieswidget.cpp
     3d/qgsvectorlayer3drendererwidget.cpp
     3d/qgsmeshlayer3drendererwidget.cpp
-    3d/qgsmap3dexportwidget.cpp
     layout/qgslayout3dmapwidget.cpp
     3d/qgsskyboxrenderingsettingswidget.cpp
     3d/qgsshadowrenderingsettingswidget.cpp
@@ -504,6 +510,29 @@ if(QGISPOSTFIX)
   )
 endif()
 
+# NO_GENERATE_EXTRA_QMLDIRS was added in Qt 6.9.0
+if(Qt6Core_VERSION_MINOR LESS 9)
+qt_add_qml_module(qgis_app
+    URI org.qgis.app
+    VERSION 1.0
+    QML_FILES
+        qml/WelcomeScreen.qml
+        qml/components/CustomScrollBar.qml
+        qml/components/NewsCard.qml
+        qml/components/ProjectCard.qml
+        qml/components/UpdateNotificationBar.qml
+        qml/components/FooterBar.qml
+    OUTPUT_DIRECTORY
+        ${CMAKE_CURRENT_BINARY_DIR}/qml/org/qgis/app
+    RESOURCE_PREFIX
+        /qt/qml/
+    RESOURCES
+        qml/images/basemap.jpg
+        qml/images/close.svg
+        qml/images/love.svg
+        qml/images/qgis.svg
+)
+else()
 qt_add_qml_module(qgis_app
     URI org.qgis.app
     VERSION 1.0
@@ -525,11 +554,13 @@ qt_add_qml_module(qgis_app
         qml/images/qgis.svg
     NO_GENERATE_EXTRA_QMLDIRS
 )
+endif()
 
 target_compile_definitions(qgis_app PRIVATE "QT_PLUGINS_DIR=\"${QT_PLUGINS_DIR}\"")
 target_compile_definitions(qgis_app PRIVATE "QGISPOSTFIX=\"${QGISPOSTFIX}\"")
 if (POSTGRES_FOUND)
   target_compile_definitions(qgis_app PRIVATE -DPOSTGRESQL_VERSION=\"${PostgreSQL_VERSION_STRING}\")
+  target_link_libraries(qgis_app PRIVATE PostgreSQL::PostgreSQL)
 endif()
 
 target_include_directories(qgis_app PUBLIC

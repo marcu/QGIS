@@ -23,6 +23,7 @@
 #include <QString>
 #include <QStringList>
 #include <QTextBoundaryFinder>
+#include <QUuid>
 #include <QVector>
 
 using namespace Qt::StringLiterals;
@@ -69,6 +70,19 @@ QString QgsStringUtils::unaccent( const QString &input )
   return out;
 }
 
+QString QgsStringUtils::createUniqueId( const QString &base )
+{
+  // A random UUID guarantees uniqueness; the base is a human-readable prefix.
+  const QString uuid = QUuid::createUuid().toString( QUuid::StringFormat::WithoutBraces );
+  QString id = base.isEmpty() ? uuid : base + '_' + uuid;
+  // Tidy the id up to avoid characters that may cause problems elsewhere (e.g.
+  // in some parts of XML). Replaces every non-word character (word characters
+  // are the alphabet, numbers and underscore) with an underscore.
+  const thread_local QRegularExpression idRx( uR"([\W])"_s );
+  id.replace( idRx, u"_"_s );
+  return id;
+}
+
 QString QgsStringUtils::capitalize( const QString &string, Qgis::Capitalization capitalization )
 {
   if ( string.isEmpty() )
@@ -111,15 +125,9 @@ QString QgsStringUtils::capitalize( const QString &string, Qgis::Capitalization 
     {
       // yes, this is MASSIVELY simplifying the problem!!
 
-      static QStringList smallWords;
-      static QStringList newPhraseSeparators;
-      static QRegularExpression splitWords;
-      if ( smallWords.empty() )
-      {
-        smallWords = QObject::tr( "a|an|and|as|at|but|by|en|for|if|in|nor|of|on|or|per|s|the|to|vs.|vs|via" ).split( '|' );
-        newPhraseSeparators = QObject::tr( ".|:" ).split( '|' );
-        splitWords = QRegularExpression( u"\\b"_s, QRegularExpression::UseUnicodePropertiesOption );
-      }
+      const thread_local QStringList smallWords = QObject::tr( "a|an|and|as|at|but|by|en|for|if|in|nor|of|on|or|per|s|the|to|vs.|vs|via" ).split( '|' );
+      const thread_local QStringList newPhraseSeparators = QObject::tr( ".|:" ).split( '|' );
+      const thread_local QRegularExpression splitWords = QRegularExpression( u"\\b"_s, QRegularExpression::UseUnicodePropertiesOption );
 
       const bool allSameCase = string.toLower() == string || string.toUpper() == string;
       const QStringList parts = ( allSameCase ? string.toLower() : string ).split( splitWords, Qt::SkipEmptyParts );
@@ -566,30 +574,39 @@ QString QgsStringUtils::insertLinks( const QString &string, bool *foundLinks )
   // http://alanstorm.com/url_regex_explained
   // note - there's more robust implementations available
   const thread_local QRegularExpression urlRegEx(
-    u"((?:(?:http|https|ftp|file)://[^\\s]+[^\\s,.]+)|(?:\\b(([\\w-]+://?|www[.])[^\\s()<>]+(?:\\([\\w\\d]+\\)|([^!\"#$%&'()*+,\\-./:;<=>?@[\\\\\\]^_`{|}~\\s]|/)))))"_s
+    u"((?:(?:['\"\\(]?http|https|ftp|file)://[^\\s]+[^\\s,.]+)|(?:\\b(([\\w-]+://?|www[.])[^\\s()<>]+(?:\\([\\w\\d]+\\)|([^!\"#$%&'()*+,\\-./:;<=>?@[\\\\\\]^_`{|}~\\s]|/)))))"_s
   );
+  const thread_local QRegularExpression groupedStringRegEx( u"^(['\"\\(]+)(.*?)(?:['\")]+)"_s );
   const thread_local QRegularExpression protoRegEx( u"^(?:f|ht)tps?://|file://"_s );
   const thread_local QRegularExpression emailRegEx( u"([\\w._%+-]+@[\\w.-]+\\.[A-Za-z]+)"_s );
 
-  int offset = 0;
+  std::size_t offset = 0;
   bool found = false;
   QRegularExpressionMatch match = urlRegEx.match( converted );
   while ( match.hasMatch() )
   {
     found = true;
     QString url = match.captured( 1 );
+    std::size_t urlStart = match.capturedStart( 1 );
+
     QString protoUrl = url;
+    const QRegularExpressionMatch groupedStringMatch = groupedStringRegEx.match( protoUrl );
+    if ( groupedStringMatch.hasMatch() )
+    {
+      url = groupedStringMatch.captured( 2 );
+      protoUrl = url;
+      urlStart += groupedStringMatch.capturedLength( 1 );
+    }
     if ( !protoRegEx.match( protoUrl ).hasMatch() )
     {
       protoUrl.prepend( "http://" );
     }
     QString anchor = u"<a href=\"%1\">%2</a>"_s.arg( protoUrl.toHtmlEscaped(), url.toHtmlEscaped() );
-    converted.replace( match.capturedStart( 1 ), url.length(), anchor );
-    offset = match.capturedStart( 1 ) + anchor.length();
+    converted.replace( urlStart, url.length(), anchor );
+    offset = urlStart + anchor.length();
     match = urlRegEx.match( converted, offset );
   }
 
-  offset = 0;
   match = emailRegEx.match( converted );
   while ( match.hasMatch() )
   {

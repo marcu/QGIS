@@ -137,6 +137,8 @@ QgsFeatureSink::SinkFlags QgsMultiRingConstantBufferAlgorithm::sinkFlags() const
 
 QgsFeatureList QgsMultiRingConstantBufferAlgorithm::processFeature( const QgsFeature &feature, QgsProcessingContext &context, QgsProcessingFeedback *feedback )
 {
+  QGS_MARK_ALGORITHM_SOURCE
+
   double currentDistance = 0;
   QgsGeometry outputGeometry, previousGeometry;
 
@@ -152,14 +154,14 @@ QgsFeatureList QgsMultiRingConstantBufferAlgorithm::processFeature( const QgsFea
 
   // Set previous geometry to a zero-distance buffer of the original geometry,
   // this is needed for negative distance values
-  previousGeometry = feature.geometry().buffer( 0.0, 40 );
+  previousGeometry = feature.geometry().buffer( 0.0, 40, feedback );
   previousGeometry.convertToMultiType();
 
   for ( int i = 1; i <= rings; ++i )
   {
     QgsFeature out;
     currentDistance = i * distance;
-    outputGeometry = feature.geometry().buffer( currentDistance, 40 );
+    outputGeometry = feature.geometry().buffer( currentDistance, 40, feedback );
     outputGeometry.convertToMultiType();
     if ( outputGeometry.isNull() )
     {
@@ -169,7 +171,7 @@ QgsFeatureList QgsMultiRingConstantBufferAlgorithm::processFeature( const QgsFea
 
     if ( distance < 0.0 )
     {
-      out.setGeometry( previousGeometry.symDifference( outputGeometry ) );
+      out.setGeometry( previousGeometry.symDifference( outputGeometry, QgsGeometryParameters(), feedback ) );
     }
     else if ( i == 1 )
     {
@@ -177,7 +179,7 @@ QgsFeatureList QgsMultiRingConstantBufferAlgorithm::processFeature( const QgsFea
     }
     else
     {
-      out.setGeometry( outputGeometry.symDifference( previousGeometry ) );
+      out.setGeometry( outputGeometry.symDifference( previousGeometry, QgsGeometryParameters(), feedback ) );
     }
     previousGeometry = outputGeometry;
     QgsAttributes attrs = feature.attributes();

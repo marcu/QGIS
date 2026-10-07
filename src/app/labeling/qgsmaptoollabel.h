@@ -64,13 +64,6 @@ class APP_EXPORT QgsMapToolLabel : public QgsMapToolAdvancedDigitizing
     */
     bool labelCanShowHide( QgsVectorLayer *vlayer, int &showCol ) const;
 
-    enum class PropertyStatus
-    {
-      Valid,
-      DoesNotExist,
-      CurrentExpressionInvalid
-    };
-
     /**
      * Checks if labels in a layer can be rotated
      * \param rotationCol out: attribute column for data defined label rotation
@@ -238,7 +231,7 @@ class APP_EXPORT QgsMapToolLabel : public QgsMapToolAdvancedDigitizing
 
     /**
      * Change the data defined line anchor percent of current label
-     * \param anchorPercent data defined line anchor percent
+     * \param lineAnchorPercent data defined line anchor percent
      * \returns TRUE if data defined curved offset could be changed
      */
     bool changeCurrentLabelDataDefinedLineAnchorPercent( const QVariant &lineAnchorPercent );
